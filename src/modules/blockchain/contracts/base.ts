@@ -3,9 +3,13 @@ import { ChainConnectionInfo, RPCInfo } from '../interfaces';
 import { Repository } from 'typeorm';
 import { IndexerEventStatus } from '../../database/entities/indexer-event-status.entity';
 import { DEFAULT_BLOCK_START } from '../../../common/variables';
+import { Erc20__factory } from './typechain';
 
 export abstract class BaseContractService {
   private readonly connectionsMap: Map<number, ChainConnectionInfo> = new Map();
+  protected readonly eventsProcessed: Map<number, number> = new Map();
+  protected readonly lastProcessedBlock: Map<number, number> = new Map();
+
   protected CONTRACT_ADDRESSES: { [key: number]: string };
   constructor(
     private readonly chainConnectionInfos: ChainConnectionInfo[],
@@ -39,6 +43,28 @@ export abstract class BaseContractService {
     return new JsonRpcProvider(rpcInfo.url, chainId);
   }
 
+  protected async getERC20Metadata(address: string, chainId: number) {
+    const connectionInfo = this.getConnectionInfo(chainId);
+    const promises = connectionInfo.rpcInfos.map(async (rpcInfo) => {
+      const provider = this.provider(rpcInfo, chainId);
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+      const erc20 = Erc20__factory.connect(address, provider);
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+      return Promise.all([erc20.decimals(), erc20.symbol(), erc20.name()]);
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const [decimals, symbol, name] = await Promise.any(promises);
+    return {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+      decimals: parseInt(decimals.toString()),
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      symbol,
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      name,
+    };
+  }
+
   protected async getIndexerEventStatus(eventName: string, chainId: number) {
     const contractAddress = this.CONTRACT_ADDRESSES[chainId].toString();
     // Find status
@@ -59,5 +85,17 @@ export abstract class BaseContractService {
         await this.indexerEventStatusRepository.save(indexerEventStatus);
     }
     return indexerEventStatus;
+  }
+
+  protected waitFor(delayInMS: number = 500) {
+    return new Promise<void>((resolve) => {
+      setTimeout(() => resolve(), delayInMS);
+    });
+  }
+
+  getMetricForChain(chainId: number) {
+    const eventCounts = this.eventsProcessed.get(chainId) || 0;
+    const lastProcessedBlock = this.lastProcessedBlock.get(chainId) || 0;
+    return { eventCounts, lastProcessedBlock };
   }
 }
