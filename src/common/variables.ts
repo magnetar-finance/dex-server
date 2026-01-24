@@ -5,6 +5,17 @@ export enum ChainIds {
 
 export const DEFAULT_BLOCK_RANGE = 10;
 export const DEFAULT_BLOCK_START = 400000;
+export const DEFAULT_REDIS_HOST = 'localhost';
+export const DEFAULT_REDIS_PORT = 6379;
+export const DEFAULT_REDIS_USERNAME = 'foo';
+export const DEFAULT_REDIS_PASSWORD = 'bar';
+export const DEFAULT_SECURE_REDIS_URI = `redis://${DEFAULT_REDIS_USERNAME}:${DEFAULT_REDIS_PASSWORD}@${DEFAULT_REDIS_HOST}:${DEFAULT_REDIS_PORT}`;
+export const DEFAULT_NON_SECURE_REDIS_URI = `redis://${DEFAULT_REDIS_HOST}:${DEFAULT_REDIS_PORT}`;
 
 // Injectables
 export const CONNECTION_INFO = 'CONNECTION_INFO';
+export const REDIS_CLIENT = 'REDIS_CLIENT';
+export const REDIS_CLIENT_CONFIG = 'REDIS_CLIENT_CONFIG';
+
+// Redis keys
+export const RESOURCE_LOCK = 'RESOURCE_LOCK';
