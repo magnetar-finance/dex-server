@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { BaseFactoryContractService } from './base-factory';
 import { ChainConnectionInfo } from '../interfaces';
-import { Factory, Factory__factory } from './typechain';
+import { ClFactory, ClFactory__factory } from './typechain';
 import { JsonRpcProvider } from 'ethers';
 import {
   ChainIds,
@@ -16,7 +16,7 @@ import { Pool, PoolType } from '../../database/entities/pool.entity';
 import { CacheService } from '../../cache/cache.service';
 
 @Injectable()
-export class V2FactoryService extends BaseFactoryContractService {
+export class CLFactoryService extends BaseFactoryContractService {
   constructor(
     @Inject(CONNECTION_INFO) connectionInfo: ChainConnectionInfo[],
     cacheService: CacheService,
@@ -33,21 +33,21 @@ export class V2FactoryService extends BaseFactoryContractService {
 
   private initializeContracts() {
     this.CONTRACT_ADDRESSES = {
-      [ChainIds.DUSK_TESTNET]: '0xE41d241720FEE7cD6BDfA9aB3204d23687703CD5',
-      [ChainIds.PHAROS_TESTNET]: '0x68D81F61b88c2622A590719f956f5Dc253a1dC3d',
+      [ChainIds.DUSK_TESTNET]: '0xf6a6a429a0b9676293Df0E3616A6a33cA673b5C3',
+      [ChainIds.PHAROS_TESTNET]: '0xD75411C6A3fEf2278E51EEaa73cdE8352c59eFEd',
     };
   }
 
   private initializeStartBlocks() {
     this.START_BLOCKS = {
-      [ChainIds.DUSK_TESTNET]: 1306677,
-      [ChainIds.PHAROS_TESTNET]: 10485542,
+      [ChainIds.DUSK_TESTNET]: 1308356,
+      [ChainIds.PHAROS_TESTNET]: 10490769,
     };
   }
 
-  private getContract(chainId: number, provider: JsonRpcProvider): Factory {
+  private getContract(chainId: number, provider: JsonRpcProvider): ClFactory {
     const contractAddress = this.CONTRACT_ADDRESSES[chainId];
-    return Factory__factory.connect(contractAddress, provider);
+    return ClFactory__factory.connect(contractAddress, provider);
   }
 
   async handlePoolCreated(chainId: number) {
@@ -57,7 +57,6 @@ export class V2FactoryService extends BaseFactoryContractService {
       'PoolCreated',
       chainId,
     );
-
     const connectionInfo = this.getConnectionInfo(chainId);
     const promises = connectionInfo.rpcInfos.map((rpcInfo) => {
       const provider = this.provider(rpcInfo, chainId);
@@ -94,7 +93,7 @@ export class V2FactoryService extends BaseFactoryContractService {
 
     for (const eventDatum of eventData) {
       const processedBlock = eventDatum.blockNumber;
-      const { pool, token0, token1, stable } = eventDatum.args;
+      const { pool, token0, token1 } = eventDatum.args;
 
       const token0Id = `${token0.toLowerCase()}-${chainId}`;
       const token1Id = `${token1.toLowerCase()}-${chainId}`;
@@ -173,7 +172,7 @@ export class V2FactoryService extends BaseFactoryContractService {
         volumeToken0: '0',
         volumeToken1: '0',
         volumeUSD: '0',
-        poolType: stable ? PoolType.STABLE : PoolType.VOLATILE,
+        poolType: PoolType.CONCENTRATED,
       });
 
       // Insert pool
@@ -189,6 +188,6 @@ export class V2FactoryService extends BaseFactoryContractService {
       this.updateChainMetric(chainId);
     }
 
-    await this.releaseResource(chainId);
+    await this.releaseResource(chainId); // Release resource
   }
 }
