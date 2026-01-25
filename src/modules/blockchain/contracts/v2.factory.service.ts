@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { BaseFactoryContractService } from './base-factory';
+import { BaseFactoryContractService } from './base/base-factory';
 import { ChainConnectionInfo } from '../interfaces';
 import { Factory, Factory__factory } from './typechain';
 import { JsonRpcProvider } from 'ethers';
@@ -14,6 +14,8 @@ import { Token } from '../../database/entities/token.entity';
 import { Repository } from 'typeorm';
 import { Pool, PoolType } from '../../database/entities/pool.entity';
 import { CacheService } from '../../cache/cache.service';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { EventTypes } from './types';
 
 @Injectable()
 export class V2FactoryService extends BaseFactoryContractService {
@@ -25,6 +27,7 @@ export class V2FactoryService extends BaseFactoryContractService {
     @InjectRepository(Token)
     private readonly tokenRepository: Repository<Token>,
     @InjectRepository(Pool) private readonly poolRepository: Repository<Pool>,
+    private readonly eventEmitter: EventEmitter2,
   ) {
     super(connectionInfo, cacheService, repository);
     this.initializeContracts();
@@ -53,19 +56,24 @@ export class V2FactoryService extends BaseFactoryContractService {
   async handlePoolCreated(chainId: number) {
     await this.haltUntilOpen(chainId); // If resource is locked, halt at this point
 
+    const lastBlockNumber = await this.getLatestBlockNumber(chainId);
+
     const indexerEventStatus = await this.getIndexerEventStatus(
       'PoolCreated',
       chainId,
     );
-
     const connectionInfo = this.getConnectionInfo(chainId);
     const promises = connectionInfo.rpcInfos.map((rpcInfo) => {
       const provider = this.provider(rpcInfo, chainId);
       const contract = this.getContract(chainId, provider);
-      const blockStart = indexerEventStatus.lastBlockNumber + 1;
+      const blockStart = lastBlockNumber
+        ? Math.min(indexerEventStatus.lastBlockNumber + 1, lastBlockNumber)
+        : indexerEventStatus.lastBlockNumber + 1;
       const blockEnd =
         blockStart + (rpcInfo.queryBlockRange || DEFAULT_BLOCK_RANGE);
-      indexerEventStatus.lastBlockNumber = blockEnd; // We still want to update last processed block even if no data is available.
+      indexerEventStatus.lastBlockNumber = lastBlockNumber
+        ? Math.min(blockEnd, lastBlockNumber)
+        : blockEnd; // We still want to update last processed block even if no data is available.
       return contract.queryFilter(
         contract.filters.PoolCreated,
         blockStart,
@@ -77,23 +85,8 @@ export class V2FactoryService extends BaseFactoryContractService {
     await this.waitFor(3000);
     const eventData = await Promise.any(promises);
 
-    if (!eventData.length) {
-      const lastBlockNumber = await this.getLatestBlockNumber(chainId);
-      // We don't want last processed block number to be greater than current block number
-      if (
-        lastBlockNumber &&
-        indexerEventStatus.lastBlockNumber > lastBlockNumber
-      )
-        indexerEventStatus.lastBlockNumber = lastBlockNumber;
-      await this.indexerEventStatusRepository.update(
-        { id: indexerEventStatus.id },
-        indexerEventStatus,
-      );
-      return;
-    }
-
     for (const eventDatum of eventData) {
-      const processedBlock = eventDatum.blockNumber;
+      const processedBlock = await eventDatum.getBlock();
       const { pool, token0, token1, stable } = eventDatum.args;
 
       const token0Id = `${token0.toLowerCase()}-${chainId}`;
@@ -114,13 +107,13 @@ export class V2FactoryService extends BaseFactoryContractService {
           decimals,
           address: token0,
           chainId,
-          totalLiquidity: '0',
-          totalLiquidityETH: '0',
-          totalLiquidityUSD: '0',
-          derivedETH: '0',
-          derivedUSD: '0',
-          tradeVolume: '0',
-          tradeVolumeUSD: '0',
+          totalLiquidity: 0,
+          totalLiquidityETH: 0,
+          totalLiquidityUSD: 0,
+          derivedETH: 0,
+          derivedUSD: 0,
+          tradeVolume: 0,
+          tradeVolumeUSD: 0,
           txCount: 0,
         });
         token0Entity = await this.tokenRepository.save(token0Entity);
@@ -137,13 +130,13 @@ export class V2FactoryService extends BaseFactoryContractService {
           decimals,
           address: token1,
           chainId,
-          totalLiquidity: '0',
-          totalLiquidityETH: '0',
-          totalLiquidityUSD: '0',
-          derivedETH: '0',
-          derivedUSD: '0',
-          tradeVolume: '0',
-          tradeVolumeUSD: '0',
+          totalLiquidity: 0,
+          totalLiquidityETH: 0,
+          totalLiquidityUSD: 0,
+          derivedETH: 0,
+          derivedUSD: 0,
+          tradeVolume: 0,
+          tradeVolumeUSD: 0,
           txCount: 0,
         });
         token1Entity = await this.tokenRepository.save(token1Entity);
@@ -151,44 +144,51 @@ export class V2FactoryService extends BaseFactoryContractService {
 
       const poolEntity = this.poolRepository.create({
         address: pool,
-        totalBribesUSD: '0',
+        totalBribesUSD: 0,
         chainId,
-        reserve0: '0',
-        reserve1: '0',
-        reserveETH: '0',
-        reserveUSD: '0',
+        reserve0: 0,
+        reserve1: 0,
+        reserveETH: 0,
+        reserveUSD: 0,
         token0: token0Entity,
         token1: token1Entity,
-        token0Price: '0',
-        token1Price: '0',
-        totalEmissions: '0',
-        totalEmissionsUSD: '0',
-        totalFees0: '0',
-        totalFees1: '0',
-        totalFeesUSD: '0',
-        totalSupply: '0',
-        totalVotes: '0',
-        txCount: '0',
-        volumeETH: '0',
-        volumeToken0: '0',
-        volumeToken1: '0',
-        volumeUSD: '0',
+        token0Price: 0,
+        token1Price: 0,
+        totalEmissions: 0,
+        totalEmissionsUSD: 0,
+        totalFees0: 0,
+        totalFees1: 0,
+        totalFeesUSD: 0,
+        totalSupply: 0,
+        totalVotes: 0,
+        txCount: 0,
+        volumeETH: 0,
+        volumeToken0: 0,
+        volumeToken1: 0,
+        volumeUSD: 0,
         poolType: stable ? PoolType.STABLE : PoolType.VOLATILE,
+        createdAtTimestamp: processedBlock.timestamp,
+        createdAtBlockNumber: processedBlock.number,
       });
 
       // Insert pool
       await this.poolRepository.save(poolEntity);
 
       // Update indexer status
-      indexerEventStatus.lastBlockNumber = processedBlock;
-      await this.indexerEventStatusRepository.update(
-        { id: indexerEventStatus.id },
-        indexerEventStatus,
-      );
+      indexerEventStatus.lastBlockNumber = processedBlock.number;
 
       this.updateChainMetric(chainId);
+      this.eventEmitter.emit(EventTypes.V2_POOL_DEPLOYED, {
+        address: pool,
+        block: processedBlock.number,
+        chainId,
+      });
     }
 
+    await this.indexerEventStatusRepository.update(
+      { id: indexerEventStatus.id },
+      indexerEventStatus,
+    );
     await this.releaseResource(chainId);
   }
 }

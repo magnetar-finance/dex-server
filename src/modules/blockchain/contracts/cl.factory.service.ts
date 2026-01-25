@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { BaseFactoryContractService } from './base-factory';
+import { BaseFactoryContractService } from './base/base-factory';
 import { ChainConnectionInfo } from '../interfaces';
 import { ClFactory, ClFactory__factory } from './typechain';
 import { JsonRpcProvider } from 'ethers';
@@ -53,6 +53,8 @@ export class CLFactoryService extends BaseFactoryContractService {
   async handlePoolCreated(chainId: number) {
     await this.haltUntilOpen(chainId); // If resource is locked, halt at this point
 
+    const lastBlockNumber = await this.getLatestBlockNumber(chainId);
+
     const indexerEventStatus = await this.getIndexerEventStatus(
       'PoolCreated',
       chainId,
@@ -61,10 +63,14 @@ export class CLFactoryService extends BaseFactoryContractService {
     const promises = connectionInfo.rpcInfos.map((rpcInfo) => {
       const provider = this.provider(rpcInfo, chainId);
       const contract = this.getContract(chainId, provider);
-      const blockStart = indexerEventStatus.lastBlockNumber + 1;
+      const blockStart = lastBlockNumber
+        ? Math.min(indexerEventStatus.lastBlockNumber + 1, lastBlockNumber)
+        : indexerEventStatus.lastBlockNumber + 1;
       const blockEnd =
         blockStart + (rpcInfo.queryBlockRange || DEFAULT_BLOCK_RANGE);
-      indexerEventStatus.lastBlockNumber = blockEnd; // We still want to update last processed block even if no data is available.
+      indexerEventStatus.lastBlockNumber = lastBlockNumber
+        ? Math.min(blockEnd, lastBlockNumber)
+        : blockEnd; // We still want to update last processed block even if no data is available.
       return contract.queryFilter(
         contract.filters.PoolCreated,
         blockStart,
@@ -76,23 +82,8 @@ export class CLFactoryService extends BaseFactoryContractService {
     await this.waitFor(3000);
     const eventData = await Promise.any(promises);
 
-    if (!eventData.length) {
-      const lastBlockNumber = await this.getLatestBlockNumber(chainId);
-      // We don't want last processed block number to be greater than current block number
-      if (
-        lastBlockNumber &&
-        indexerEventStatus.lastBlockNumber > lastBlockNumber
-      )
-        indexerEventStatus.lastBlockNumber = lastBlockNumber;
-      await this.indexerEventStatusRepository.update(
-        { id: indexerEventStatus.id },
-        indexerEventStatus,
-      );
-      return;
-    }
-
     for (const eventDatum of eventData) {
-      const processedBlock = eventDatum.blockNumber;
+      const processedBlock = await eventDatum.getBlock();
       const { pool, token0, token1 } = eventDatum.args;
 
       const token0Id = `${token0.toLowerCase()}-${chainId}`;
@@ -113,13 +104,13 @@ export class CLFactoryService extends BaseFactoryContractService {
           decimals,
           address: token0,
           chainId,
-          totalLiquidity: '0',
-          totalLiquidityETH: '0',
-          totalLiquidityUSD: '0',
-          derivedETH: '0',
-          derivedUSD: '0',
-          tradeVolume: '0',
-          tradeVolumeUSD: '0',
+          totalLiquidity: 0,
+          totalLiquidityETH: 0,
+          totalLiquidityUSD: 0,
+          derivedETH: 0,
+          derivedUSD: 0,
+          tradeVolume: 0,
+          tradeVolumeUSD: 0,
           txCount: 0,
         });
         token0Entity = await this.tokenRepository.save(token0Entity);
@@ -136,13 +127,13 @@ export class CLFactoryService extends BaseFactoryContractService {
           decimals,
           address: token1,
           chainId,
-          totalLiquidity: '0',
-          totalLiquidityETH: '0',
-          totalLiquidityUSD: '0',
-          derivedETH: '0',
-          derivedUSD: '0',
-          tradeVolume: '0',
-          tradeVolumeUSD: '0',
+          totalLiquidity: 0,
+          totalLiquidityETH: 0,
+          totalLiquidityUSD: 0,
+          derivedETH: 0,
+          derivedUSD: 0,
+          tradeVolume: 0,
+          tradeVolumeUSD: 0,
           txCount: 0,
         });
         token1Entity = await this.tokenRepository.save(token1Entity);
@@ -150,44 +141,45 @@ export class CLFactoryService extends BaseFactoryContractService {
 
       const poolEntity = this.poolRepository.create({
         address: pool,
-        totalBribesUSD: '0',
+        totalBribesUSD: 0,
         chainId,
-        reserve0: '0',
-        reserve1: '0',
-        reserveETH: '0',
-        reserveUSD: '0',
+        reserve0: 0,
+        reserve1: 0,
+        reserveETH: 0,
+        reserveUSD: 0,
         token0: token0Entity,
         token1: token1Entity,
-        token0Price: '0',
-        token1Price: '0',
-        totalEmissions: '0',
-        totalEmissionsUSD: '0',
-        totalFees0: '0',
-        totalFees1: '0',
-        totalFeesUSD: '0',
-        totalSupply: '0',
-        totalVotes: '0',
-        txCount: '0',
-        volumeETH: '0',
-        volumeToken0: '0',
-        volumeToken1: '0',
-        volumeUSD: '0',
+        token0Price: 0,
+        token1Price: 0,
+        totalEmissions: 0,
+        totalEmissionsUSD: 0,
+        totalFees0: 0,
+        totalFees1: 0,
+        totalFeesUSD: 0,
+        totalSupply: 0,
+        totalVotes: 0,
+        txCount: 0,
+        volumeETH: 0,
+        volumeToken0: 0,
+        volumeToken1: 0,
+        volumeUSD: 0,
         poolType: PoolType.CONCENTRATED,
+        createdAtBlockNumber: processedBlock.number,
+        createdAtTimestamp: processedBlock.timestamp,
       });
 
       // Insert pool
       await this.poolRepository.save(poolEntity);
 
       // Update indexer status
-      indexerEventStatus.lastBlockNumber = processedBlock;
-      await this.indexerEventStatusRepository.update(
-        { id: indexerEventStatus.id },
-        indexerEventStatus,
-      );
-
+      indexerEventStatus.lastBlockNumber = processedBlock.number;
       this.updateChainMetric(chainId);
     }
 
+    await this.indexerEventStatusRepository.update(
+      { id: indexerEventStatus.id },
+      indexerEventStatus,
+    );
     await this.releaseResource(chainId); // Release resource
   }
 }

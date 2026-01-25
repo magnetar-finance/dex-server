@@ -1,26 +1,45 @@
 import {
-  BeforeInsert,
+  Entity,
+  PrimaryColumn,
+  Index,
+  ManyToOne,
+  JoinColumn,
   Column,
   CreateDateColumn,
-  Entity,
-  Index,
-  OneToMany,
-  PrimaryColumn,
   UpdateDateColumn,
   VersionColumn,
+  BeforeInsert,
 } from 'typeorm';
-import { Mint } from './mint.entity';
-import { Burn } from './burn.entity';
-import { Swap } from './swap.entity';
+import { Gauge } from './gauge.entity';
+import { User } from './user.entity';
 
-@Entity('transaction')
-export class Transaction {
+@Entity('gauge_position')
+export class GaugePosition {
   @PrimaryColumn()
   id: string;
 
   @Index()
+  @ManyToOne(() => Gauge)
+  @JoinColumn()
+  gauge: Gauge;
+
+  @Column('decimal', {
+    precision: 500,
+    scale: 5,
+    transformer: {
+      to: (value: number) => value?.toString(),
+      from: (value: string) => (value ? Number(value) : value),
+    },
+  })
+  amountDeposited: number;
+
+  @Index()
+  @ManyToOne(() => User, (user) => user.gaugePositions)
+  @JoinColumn()
+  account: User;
+
   @Column()
-  hash: string;
+  creationTransaction: string;
 
   @Column('bigint', {
     transformer: {
@@ -28,24 +47,7 @@ export class Transaction {
       from: (value: string) => (value ? Number(value) : value),
     },
   })
-  block: number;
-
-  @Column('bigint', {
-    transformer: {
-      to: (value: number) => value?.toString(),
-      from: (value: string) => (value ? Number(value) : value),
-    },
-  })
-  timestamp: number;
-
-  @OneToMany(() => Mint, (mint) => mint.transaction)
-  mints: Mint[];
-
-  @OneToMany(() => Burn, (burn) => burn.transaction)
-  burns: Burn[];
-
-  @OneToMany(() => Swap, (swap) => swap.transaction)
-  swaps: Swap[];
+  creationBlock: number;
 
   @Column('integer', { nullable: false, comment: 'Chain ID' })
   chainId: number;
@@ -61,6 +63,6 @@ export class Transaction {
 
   @BeforeInsert()
   preSave() {
-    this.id = `${this.hash.toLowerCase()}-${this.chainId}`;
+    this.id = `${this.account.address.toString()}-${this.gauge.address.toString()}-${this.chainId}`;
   }
 }

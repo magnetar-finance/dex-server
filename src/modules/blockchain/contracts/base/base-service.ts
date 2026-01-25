@@ -1,27 +1,27 @@
 import { JsonRpcProvider } from 'ethers';
-import { ChainConnectionInfo, RPCInfo } from '../interfaces';
-import { Repository } from 'typeorm';
-import { IndexerEventStatus } from '../../database/entities/indexer-event-status.entity';
-import { DEFAULT_BLOCK_START, RESOURCE_LOCK } from '../../../common/variables';
-import { Erc20__factory } from './typechain';
-import { randomUUID } from 'crypto';
-import { CacheService } from '../../cache/cache.service';
 import { Logger } from '@nestjs/common';
+import { ChainConnectionInfo, RPCInfo } from '../../interfaces';
+import { Repository } from 'typeorm';
+import { IndexerEventStatus } from '../../../database/entities/indexer-event-status.entity';
+import { CacheService } from '../../../cache/cache.service';
+import { randomUUID } from 'crypto';
+import { Erc20__factory } from '../typechain';
+import { RESOURCE_LOCK } from '../../../../common/variables';
 
-export abstract class BaseFactoryContractService {
-  protected readonly logger = new Logger(BaseFactoryContractService.name);
+export abstract class BaseService {
+  protected readonly logger = new Logger(BaseService.name);
 
   private readonly connectionsMap: Map<number, ChainConnectionInfo> = new Map();
   protected readonly eventsProcessed: Map<number, number> = new Map();
 
+  protected readonly watchedAddresses: Set<string> = new Set();
+
   protected startTime: number;
   protected lockId: string;
 
-  protected CONTRACT_ADDRESSES: { [key: number]: string };
-  protected START_BLOCKS: { [key: number]: number };
   constructor(
     private readonly chainConnectionInfos: ChainConnectionInfo[],
-    private readonly cacheService: CacheService,
+    protected readonly cacheService: CacheService,
     protected readonly indexerEventStatusRepository: Repository<IndexerEventStatus>,
   ) {
     this.initialize();
@@ -72,27 +72,6 @@ export abstract class BaseFactoryContractService {
     };
   }
 
-  protected async getIndexerEventStatus(eventName: string, chainId: number) {
-    const contractAddress = this.CONTRACT_ADDRESSES[chainId].toString();
-    // Find status
-    const statusId = `${eventName}-${contractAddress}:${chainId}`;
-    let indexerEventStatus = await this.indexerEventStatusRepository.findOneBy({
-      id: statusId,
-    });
-    if (indexerEventStatus === null) {
-      const lastBlockNumber = this.START_BLOCKS[chainId] || DEFAULT_BLOCK_START;
-      indexerEventStatus = this.indexerEventStatusRepository.create({
-        eventName,
-        chainId,
-        contractAddress,
-        lastBlockNumber,
-      });
-      indexerEventStatus =
-        await this.indexerEventStatusRepository.save(indexerEventStatus);
-    }
-    return indexerEventStatus;
-  }
-
   protected waitFor(delayInMS: number = 500) {
     return new Promise<void>((resolve) => {
       setTimeout(() => resolve(), delayInMS);
@@ -123,7 +102,7 @@ export abstract class BaseFactoryContractService {
       const isOpen = await this.claimResource(chainId);
       if (isOpen) {
         this.logger.log(
-          `Factory contract service with lock ID ${this.lockId} has claimed processing resource on chain with ID ${chainId}`,
+          `Service with lock ID ${this.lockId} has claimed processing resource on chain with ID ${chainId}`,
         );
         break;
       } else continue;

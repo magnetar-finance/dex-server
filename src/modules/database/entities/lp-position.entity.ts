@@ -1,5 +1,6 @@
 import {
   BeforeInsert,
+  BeforeUpdate,
   Column,
   CreateDateColumn,
   Entity,
@@ -11,26 +12,22 @@ import {
   VersionColumn,
 } from 'typeorm';
 import { Pool } from './pool.entity';
-import { Token } from './token.entity';
+import { User } from './user.entity';
 
-@Entity('gauges')
-export class Gauge {
-  @PrimaryColumn('varchar')
+@Entity('liquidity_position')
+export class LiquidityPosition {
+  @PrimaryColumn()
   id: string;
-
-  @Index()
-  @Column('varchar')
-  address: string;
 
   @Index()
   @ManyToOne(() => Pool)
   @JoinColumn()
-  depositPool: Pool;
+  pool: Pool;
 
   @Index()
-  @ManyToOne(() => Token)
+  @ManyToOne(() => User, (user) => user.lpPositions, { nullable: true })
   @JoinColumn()
-  rewardToken: Token;
+  account?: User;
 
   @Column('decimal', {
     precision: 500,
@@ -40,58 +37,28 @@ export class Gauge {
       from: (value: string) => (value ? Number(value) : value),
     },
   })
-  totalSupply: number;
+  position: number;
+
+  @Column('bigint', {
+    transformer: {
+      to: (value: number) => value?.toString(),
+      from: (value: string) => (value ? Number(value) : value),
+    },
+  })
+  creationBlock: number;
+
+  @Column()
+  creationTransaction: string;
 
   @Index()
-  @Column()
-  feeVotingReward: string;
-
-  @Index()
-  @Column()
-  bribeVotingReward: string;
-
-  @Column('decimal', {
-    precision: 500,
-    scale: 5,
+  @Column('bigint', {
+    nullable: true,
     transformer: {
       to: (value: number) => value?.toString(),
       from: (value: string) => (value ? Number(value) : value),
     },
   })
-  rewardRate: number;
-
-  @Column('decimal', {
-    precision: 500,
-    scale: 5,
-    transformer: {
-      to: (value: number) => value?.toString(),
-      from: (value: string) => (value ? Number(value) : value),
-    },
-  })
-  fees0: number;
-
-  @Column('decimal', {
-    precision: 500,
-    scale: 5,
-    transformer: {
-      to: (value: number) => value?.toString(),
-      from: (value: string) => (value ? Number(value) : value),
-    },
-  })
-  fees1: number;
-
-  @Column()
-  isAlive: boolean;
-
-  @Column('decimal', {
-    precision: 500,
-    scale: 5,
-    transformer: {
-      to: (value: number) => value?.toString(),
-      from: (value: string) => (value ? Number(value) : value),
-    },
-  })
-  emission: number;
+  clPositionTokenId?: number;
 
   @Column('integer', { nullable: false, comment: 'Chain ID' })
   chainId: number;
@@ -106,7 +73,10 @@ export class Gauge {
   updatedAt: Date;
 
   @BeforeInsert()
+  @BeforeUpdate()
   preSave() {
-    this.id = `${this.address.toLowerCase()}-${this.chainId}`;
+    this.id = this.account
+      ? `${this.pool.address.toLowerCase()}-${this.account.address.toLowerCase()}-${this.chainId}`
+      : `${this.pool.address.toLowerCase()}-${Date.now()}-${this.chainId}`;
   }
 }
