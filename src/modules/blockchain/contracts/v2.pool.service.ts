@@ -136,12 +136,12 @@ export class V2PoolService
         amount0,
         amount1,
         chainId,
-        hash: eventDatum.transactionHash,
+        hash: transactionEntity.hash,
       };
 
       await this.cacheService.hCache(
         'mint',
-        resolvableMint.hash.toLowerCase(),
+        resolvableMint.hash,
         resolvableMint,
       );
     }
