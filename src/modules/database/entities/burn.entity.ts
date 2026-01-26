@@ -19,37 +19,73 @@ export class Burn {
   id: string;
 
   @ManyToOne(() => Transaction, (tx) => tx.burns)
-  @JoinColumn({ name: 'transactionId' })
+  @JoinColumn()
   transaction: Transaction;
 
-  @Column('bigint')
-  timestamp: string;
+  @Column('bigint', {
+    transformer: {
+      to: (value: number) => value?.toString(),
+      from: (value: string) => (value ? Number(value) : value),
+    },
+  })
+  timestamp: number;
 
   @Index()
   @ManyToOne(() => Pool, (pool) => pool.burns)
-  @JoinColumn({ name: 'poolId' })
+  @JoinColumn()
   pool: Pool;
 
-  @Column('decimal', { precision: 500, scale: 5 })
-  liquidity: string;
+  @Column('decimal', {
+    precision: 500,
+    scale: 5,
+    transformer: {
+      to: (value: number) => value?.toString(),
+      from: (value: string) => (value ? Number(value) : value),
+    },
+  })
+  liquidity: number;
 
   @Column({ nullable: true })
   sender?: string;
 
-  @Column('decimal', { nullable: true })
-  amount0?: string;
+  @Column('decimal', {
+    nullable: true,
+    transformer: {
+      to: (value: number) => value?.toString(),
+      from: (value: string) => (value ? Number(value) : value),
+    },
+  })
+  amount0?: number;
 
-  @Column('decimal', { nullable: true })
-  amount1?: string;
+  @Column('decimal', {
+    nullable: true,
+    transformer: {
+      to: (value: number) => value?.toString(),
+      from: (value: string) => (value ? Number(value) : value),
+    },
+  })
+  amount1?: number;
 
   @Column({ nullable: true })
   to?: string;
 
-  @Column('bigint', { nullable: true })
-  logIndex?: string;
+  @Column('bigint', {
+    nullable: true,
+    transformer: {
+      to: (value: number) => value?.toString(),
+      from: (value: string) => (value ? Number(value) : value),
+    },
+  })
+  logIndex?: number;
 
-  @Column('decimal', { nullable: true })
-  amountUSD?: string;
+  @Column('decimal', {
+    nullable: true,
+    transformer: {
+      to: (value: number) => value?.toString(),
+      from: (value: string) => (value ? Number(value) : value),
+    },
+  })
+  amountUSD?: number;
 
   @Column()
   needsComplete: boolean;
@@ -57,8 +93,14 @@ export class Burn {
   @Column({ nullable: true })
   feeTo?: string;
 
-  @Column('decimal', { nullable: true })
-  feeLiquidity?: string;
+  @Column('decimal', {
+    nullable: true,
+    transformer: {
+      to: (value: number) => value?.toString(),
+      from: (value: string) => (value ? Number(value) : value),
+    },
+  })
+  feeLiquidity?: number;
 
   @Column('integer', { nullable: false, comment: 'Chain ID' })
   chainId: number;

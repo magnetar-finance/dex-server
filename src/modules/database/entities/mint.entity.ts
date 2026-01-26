@@ -22,8 +22,14 @@ export class Mint {
   @JoinColumn()
   transaction: Transaction;
 
-  @Column('bigint', { nullable: false })
-  timestamp: string;
+  @Column('bigint', {
+    nullable: false,
+    transformer: {
+      to: (value: number) => value?.toString(),
+      from: (value: string) => (value ? Number(value) : value),
+    },
+  })
+  timestamp: number;
 
   @Index()
   @ManyToOne(() => Pool, (pool) => pool.mints)
@@ -33,29 +39,66 @@ export class Mint {
   @Column('varchar', { nullable: false })
   to: string;
 
-  @Column('decimal', { precision: 500, scale: 5 })
-  liquidity: string;
+  @Column('decimal', {
+    precision: 500,
+    scale: 5,
+    transformer: {
+      to: (value: number) => value?.toString(),
+      from: (value: string) => (value ? Number(value) : value),
+    },
+  })
+  liquidity: number;
 
   @Column({ nullable: true })
   sender?: string;
 
-  @Column('decimal', { nullable: true })
-  amount0?: string;
+  @Column('decimal', {
+    nullable: true,
+    transformer: {
+      to: (value: number) => value?.toString(),
+      from: (value: string) => (value ? Number(value) : value),
+    },
+  })
+  amount0?: number;
 
-  @Column('decimal', { nullable: true })
-  amount1?: string;
+  @Column('decimal', {
+    nullable: true,
+    transformer: {
+      to: (value: number) => value?.toString(),
+      from: (value: string) => (value ? Number(value) : value),
+    },
+  })
+  amount1?: number;
 
-  @Column('bigint', { nullable: true })
-  logIndex?: string;
+  @Column('bigint', {
+    nullable: true,
+    transformer: {
+      to: (value: number) => value?.toString(),
+      from: (value: string) => (value ? Number(value) : value),
+    },
+  })
+  logIndex?: number;
 
-  @Column('decimal', { nullable: true })
-  amountUSD?: string;
+  @Column('decimal', {
+    nullable: true,
+    transformer: {
+      to: (value: number) => value?.toString(),
+      from: (value: string) => (value ? Number(value) : value),
+    },
+  })
+  amountUSD?: number;
 
   @Column({ nullable: true })
   feeTo?: string;
 
-  @Column('decimal', { nullable: true })
-  feeLiquidity?: string;
+  @Column('decimal', {
+    nullable: true,
+    transformer: {
+      to: (value: number) => value?.toString(),
+      from: (value: string) => (value ? Number(value) : value),
+    },
+  })
+  feeLiquidity?: number;
 
   @Column('integer', { nullable: false, comment: 'Chain ID' })
   chainId: number;

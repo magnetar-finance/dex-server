@@ -1,87 +1,83 @@
 import {
-  BeforeInsert,
-  Column,
-  CreateDateColumn,
   Entity,
-  Index,
-  JoinColumn,
-  ManyToOne,
   PrimaryColumn,
+  Column,
+  Index,
+  ManyToOne,
+  JoinColumn,
+  BeforeInsert,
+  CreateDateColumn,
   UpdateDateColumn,
   VersionColumn,
 } from 'typeorm';
-import { Pool } from './pool.entity';
-import { Token } from './token.entity';
+import { User } from './user.entity';
 
-@Entity('gauges')
-export class Gauge {
-  @PrimaryColumn('varchar')
+export enum LockType {
+  MANAGED = 'MANAGED',
+  NORMAL = 'NORMAL',
+}
+
+@Entity('lock_position')
+export class LockPosition {
+  @PrimaryColumn()
   id: string;
 
-  @Index()
-  @Column('varchar')
-  address: string;
+  @Column('decimal', {
+    precision: 500,
+    scale: 5,
+    transformer: {
+      to: (value: number) => value?.toString(),
+      from: (value: string) => (value ? Number(value) : value),
+    },
+  })
+  position: number;
 
   @Index()
-  @ManyToOne(() => Pool)
+  @ManyToOne(() => User, (user) => user.lockPositions)
   @JoinColumn()
-  depositPool: Pool;
+  owner: User;
 
-  @Index()
-  @ManyToOne(() => Token)
-  @JoinColumn()
-  rewardToken: Token;
-
-  @Column('decimal', {
-    precision: 500,
-    scale: 5,
+  @Column('bigint', {
     transformer: {
       to: (value: number) => value?.toString(),
       from: (value: string) => (value ? Number(value) : value),
     },
   })
-  totalSupply: number;
-
-  @Index()
-  @Column()
-  feeVotingReward: string;
-
-  @Index()
-  @Column()
-  bribeVotingReward: string;
-
-  @Column('decimal', {
-    precision: 500,
-    scale: 5,
-    transformer: {
-      to: (value: number) => value?.toString(),
-      from: (value: string) => (value ? Number(value) : value),
-    },
-  })
-  rewardRate: number;
-
-  @Column('decimal', {
-    precision: 500,
-    scale: 5,
-    transformer: {
-      to: (value: number) => value?.toString(),
-      from: (value: string) => (value ? Number(value) : value),
-    },
-  })
-  fees0: number;
-
-  @Column('decimal', {
-    precision: 500,
-    scale: 5,
-    transformer: {
-      to: (value: number) => value?.toString(),
-      from: (value: string) => (value ? Number(value) : value),
-    },
-  })
-  fees1: number;
+  creationBlock: number;
 
   @Column()
-  isAlive: boolean;
+  creationTransaction: string;
+
+  @Index()
+  @Column('bigint', {
+    transformer: {
+      to: (value: number) => value?.toString(),
+      from: (value: string) => (value ? Number(value) : value),
+    },
+  })
+  lockId: number;
+
+  @Column({ type: 'enum', enum: LockType })
+  lockType: LockType;
+
+  @Column()
+  permanent: boolean;
+
+  @Index()
+  @Column({ nullable: true })
+  lockRewardManager?: string;
+
+  @Index()
+  @Column({ nullable: true })
+  freeRewardManager?: string;
+
+  @Column('bigint', {
+    transformer: {
+      to: (value: number) => value?.toString(),
+      from: (value: string) => (value ? Number(value) : value),
+    },
+  })
+  unlockTime: number;
 
   @Column('decimal', {
     precision: 500,
@@ -91,7 +87,7 @@ export class Gauge {
       from: (value: string) => (value ? Number(value) : value),
     },
   })
-  emission: number;
+  totalVoteWeightGiven: number;
 
   @Column('integer', { nullable: false, comment: 'Chain ID' })
   chainId: number;
@@ -107,6 +103,6 @@ export class Gauge {
 
   @BeforeInsert()
   preSave() {
-    this.id = `${this.address.toLowerCase()}-${this.chainId}`;
+    this.id = `${this.owner.address.toLowerCase()}-${this.lockId}-${this.chainId}`;
   }
 }

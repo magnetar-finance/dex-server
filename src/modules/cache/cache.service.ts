@@ -31,6 +31,22 @@ export class CacheService {
     }
   }
 
+  async hCache(
+    key: string,
+    field: string,
+    value: string | number | Record<string, any>,
+  ): Promise<boolean> {
+    try {
+      value = this.stringifyIfNeeded(value);
+      const hSetOperationValue = await this.client.hSet(key, field, value);
+      return hSetOperationValue === 1;
+    } catch (error: any) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      this.logger.error('Error occurred while caching', error.stack);
+      return false;
+    }
+  }
+
   async obtain<T>(key: string, del: boolean = false): Promise<T | null> {
     try {
       const cachedValue = await this.client.get(key);
@@ -48,9 +64,58 @@ export class CacheService {
     }
   }
 
+  async hObtain<T>(
+    key: string,
+    field: string,
+    del: boolean = false,
+  ): Promise<T | null> {
+    try {
+      const cachedValue = await this.client.hGet(key, field);
+      const parsedValue =
+        cachedValue !== null ? this.parseString<T>(cachedValue) : null;
+      if (del) await this.client.hDel(key, field);
+      return parsedValue;
+    } catch (error: any) {
+      this.logger.error(
+        'Error occurred while obtaining value from cache',
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        error.stack,
+      );
+      return null;
+    }
+  }
+
+  async hObtainAll(key: string) {
+    try {
+      const cachedValue = await this.client.hGetAll(key);
+      return cachedValue;
+    } catch (error: any) {
+      this.logger.error(
+        'Error occurred while obtaining multiple values from cache',
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        error.stack,
+      );
+      return {};
+    }
+  }
+
   async decache(key: string): Promise<boolean> {
     try {
       const operationValue = await this.client.del(key);
+      return operationValue === 1;
+    } catch (error: any) {
+      this.logger.error(
+        'Error occurred while deleting value from cache',
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        error.stack,
+      );
+      return false;
+    }
+  }
+
+  async hDecache(key: string, field: string): Promise<boolean> {
+    try {
+      const operationValue = await this.client.hDel(key, field);
       return operationValue === 1;
     } catch (error: any) {
       this.logger.error(

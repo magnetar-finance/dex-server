@@ -22,8 +22,13 @@ export class Swap {
   @JoinColumn()
   transaction: Transaction;
 
-  @Column('bigint')
-  timestamp: string;
+  @Column('bigint', {
+    transformer: {
+      to: (value: number) => value?.toString(),
+      from: (value: string) => (value ? Number(value) : value),
+    },
+  })
+  timestamp: number;
 
   @Index()
   @ManyToOne(() => Pool, (pool) => pool.swaps)
@@ -36,26 +41,67 @@ export class Swap {
   @Column()
   from: string;
 
-  @Column('decimal', { precision: 500, scale: 5 })
-  amount0In: string;
+  @Column('decimal', {
+    precision: 500,
+    scale: 5,
+    transformer: {
+      to: (value: number) => value?.toString(),
+      from: (value: string) => (value ? Number(value) : value),
+    },
+  })
+  amount0In: number;
 
-  @Column('decimal', { precision: 500, scale: 5 })
-  amount1In: string;
+  @Column('decimal', {
+    precision: 500,
+    scale: 5,
+    transformer: {
+      to: (value: number) => value?.toString(),
+      from: (value: string) => (value ? Number(value) : value),
+    },
+  })
+  amount1In: number;
 
-  @Column('decimal', { precision: 500, scale: 5 })
-  amount0Out: string;
+  @Column('decimal', {
+    precision: 500,
+    scale: 5,
+    transformer: {
+      to: (value: number) => value?.toString(),
+      from: (value: string) => (value ? Number(value) : value),
+    },
+  })
+  amount0Out: number;
 
-  @Column('decimal', { precision: 500, scale: 5 })
-  amount1Out: string;
+  @Column('decimal', {
+    precision: 500,
+    scale: 5,
+    transformer: {
+      to: (value: number) => value?.toString(),
+      from: (value: string) => (value ? Number(value) : value),
+    },
+  })
+  amount1Out: number;
 
   @Column()
   to: string;
 
-  @Column('bigint', { nullable: true })
-  logIndex?: string;
+  @Column('bigint', {
+    nullable: true,
+    transformer: {
+      to: (value: number) => value?.toString(),
+      from: (value: string) => (value ? Number(value) : value),
+    },
+  })
+  logIndex?: number;
 
-  @Column('decimal', { precision: 500, scale: 5 })
-  amountUSD: string;
+  @Column('decimal', {
+    precision: 500,
+    scale: 5,
+    transformer: {
+      to: (value: number) => value?.toString(),
+      from: (value: string) => (value ? Number(value) : value),
+    },
+  })
+  amountUSD: number;
 
   @Column('integer', { nullable: false, comment: 'Chain ID' })
   chainId: number;
