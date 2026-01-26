@@ -5,7 +5,7 @@ import {
   Index,
   JoinColumn,
   ManyToOne,
-  PrimaryGeneratedColumn,
+  PrimaryColumn,
   UpdateDateColumn,
   VersionColumn,
 } from 'typeorm';
@@ -13,8 +13,8 @@ import { Pool } from './pool.entity';
 
 @Entity('pool_day_data')
 export class PoolDayData {
-  @PrimaryGeneratedColumn({ type: 'bigint' })
-  id: number;
+  @PrimaryColumn()
+  id: string;
 
   @Column('int')
   date: number;

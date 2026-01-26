@@ -13,6 +13,7 @@ import { IndexerEventStatus } from '../../database/entities/indexer-event-status
 import { Token } from '../../database/entities/token.entity';
 import { Repository } from 'typeorm';
 import { Pool, PoolType } from '../../database/entities/pool.entity';
+import { Statistics } from '../../database/entities/statistics.entity';
 import { CacheService } from '../../cache/cache.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { EventTypes } from './types';
@@ -23,13 +24,19 @@ export class V2FactoryService extends BaseFactoryContractService {
     @Inject(CONNECTION_INFO) connectionInfo: ChainConnectionInfo[],
     cacheService: CacheService,
     @InjectRepository(IndexerEventStatus)
-    repository: Repository<IndexerEventStatus>,
+    indexerEventStatusRepository: Repository<IndexerEventStatus>,
+    @InjectRepository(Statistics) statisticsRepository: Repository<Statistics>,
     @InjectRepository(Token)
     private readonly tokenRepository: Repository<Token>,
     @InjectRepository(Pool) private readonly poolRepository: Repository<Pool>,
     private readonly eventEmitter: EventEmitter2,
   ) {
-    super(connectionInfo, cacheService, repository);
+    super(
+      connectionInfo,
+      cacheService,
+      indexerEventStatusRepository,
+      statisticsRepository,
+    );
     this.initializeContracts();
     this.initializeStartBlocks();
   }
@@ -185,10 +192,12 @@ export class V2FactoryService extends BaseFactoryContractService {
       });
     }
 
-    await this.indexerEventStatusRepository.update(
-      { id: indexerEventStatus.id },
-      indexerEventStatus,
-    );
+    await this.indexerEventStatusRepository.save(indexerEventStatus);
+
+    const statistics = await this.loadStatistics();
+    statistics.totalPairsCreated = statistics.totalPairsCreated + 1;
+
+    await this.statisticsRepository.save(statistics);
     await this.releaseResource(chainId);
   }
 }

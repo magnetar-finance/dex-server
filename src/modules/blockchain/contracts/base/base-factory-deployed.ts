@@ -5,6 +5,7 @@ import { IndexerEventStatus } from '../../../database/entities/indexer-event-sta
 import { CacheService } from '../../../cache/cache.service';
 import { BaseService } from './base-service';
 import { DEFAULT_BLOCK_START } from '../../../../common/variables';
+import { Statistics } from '../../../database/entities/statistics.entity';
 
 export abstract class BaseFactoryDeployedContractService extends BaseService {
   protected readonly logger = new Logger(
@@ -18,8 +19,14 @@ export abstract class BaseFactoryDeployedContractService extends BaseService {
     chainConnectionInfos: ChainConnectionInfo[],
     cacheService: CacheService,
     indexerEventStatusRepository: Repository<IndexerEventStatus>,
+    statisticsRepository: Repository<Statistics>,
   ) {
-    super(chainConnectionInfos, cacheService, indexerEventStatusRepository);
+    super(
+      chainConnectionInfos,
+      cacheService,
+      indexerEventStatusRepository,
+      statisticsRepository,
+    );
   }
 
   protected async getIndexerEventStatus(

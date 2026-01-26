@@ -14,6 +14,7 @@ import { Token } from '../../database/entities/token.entity';
 import { Repository } from 'typeorm';
 import { Pool, PoolType } from '../../database/entities/pool.entity';
 import { CacheService } from '../../cache/cache.service';
+import { Statistics } from '../../database/entities/statistics.entity';
 
 @Injectable()
 export class CLFactoryService extends BaseFactoryContractService {
@@ -21,12 +22,18 @@ export class CLFactoryService extends BaseFactoryContractService {
     @Inject(CONNECTION_INFO) connectionInfo: ChainConnectionInfo[],
     cacheService: CacheService,
     @InjectRepository(IndexerEventStatus)
-    repository: Repository<IndexerEventStatus>,
+    indexerStatusRepository: Repository<IndexerEventStatus>,
+    @InjectRepository(Statistics) statisticsRepository: Repository<Statistics>,
     @InjectRepository(Token)
     private readonly tokenRepository: Repository<Token>,
     @InjectRepository(Pool) private readonly poolRepository: Repository<Pool>,
   ) {
-    super(connectionInfo, cacheService, repository);
+    super(
+      connectionInfo,
+      cacheService,
+      indexerStatusRepository,
+      statisticsRepository,
+    );
     this.initializeContracts();
     this.initializeStartBlocks();
   }
@@ -176,10 +183,13 @@ export class CLFactoryService extends BaseFactoryContractService {
       this.updateChainMetric(chainId);
     }
 
-    await this.indexerEventStatusRepository.update(
-      { id: indexerEventStatus.id },
-      indexerEventStatus,
-    );
+    await this.indexerEventStatusRepository.save(indexerEventStatus);
+
+    const statistics = await this.loadStatistics();
+    statistics.totalPairsCreated = statistics.totalPairsCreated + 1;
+
+    await this.statisticsRepository.save(statistics);
+
     await this.releaseResource(chainId); // Release resource
   }
 }

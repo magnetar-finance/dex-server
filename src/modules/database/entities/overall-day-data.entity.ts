@@ -1,28 +1,21 @@
 import {
-  Column,
-  CreateDateColumn,
   Entity,
-  Index,
-  JoinColumn,
-  ManyToOne,
   PrimaryColumn,
-  UpdateDateColumn,
+  Index,
+  Column,
   VersionColumn,
+  CreateDateColumn,
+  UpdateDateColumn,
 } from 'typeorm';
-import { Pool } from './pool.entity';
 
-@Entity('pool_hour_data')
-export class PoolHourData {
+@Entity('overall_day_data')
+export class OverallDayData {
   @PrimaryColumn()
   id: string;
 
-  @Column('int')
-  hourStartUnix: number;
-
   @Index()
-  @ManyToOne(() => Pool, (pool) => pool.poolHourData)
-  @JoinColumn()
-  pool: Pool;
+  @Column('int')
+  date: number;
 
   @Column('decimal', {
     precision: 500,
@@ -32,7 +25,7 @@ export class PoolHourData {
       from: (value: string) => (value ? Number(value) : value),
     },
   })
-  reserve0: number;
+  volumeETH: number;
 
   @Column('decimal', {
     precision: 500,
@@ -42,7 +35,7 @@ export class PoolHourData {
       from: (value: string) => (value ? Number(value) : value),
     },
   })
-  reserve1: number;
+  volumeUSD: number;
 
   @Column('decimal', {
     precision: 500,
@@ -52,7 +45,7 @@ export class PoolHourData {
       from: (value: string) => (value ? Number(value) : value),
     },
   })
-  totalSupply: number;
+  liquidityETH: number;
 
   @Column('decimal', {
     precision: 500,
@@ -62,57 +55,7 @@ export class PoolHourData {
       from: (value: string) => (value ? Number(value) : value),
     },
   })
-  reserveUSD: number;
-
-  @Column('decimal', {
-    precision: 500,
-    scale: 5,
-    transformer: {
-      to: (value: number) => value?.toString(),
-      from: (value: string) => (value ? Number(value) : value),
-    },
-  })
-  reserveETH: number;
-
-  @Column('decimal', {
-    precision: 500,
-    scale: 5,
-    transformer: {
-      to: (value: number) => value?.toString(),
-      from: (value: string) => (value ? Number(value) : value),
-    },
-  })
-  hourlyVolumeToken0: number;
-
-  @Column('decimal', {
-    precision: 500,
-    scale: 5,
-    transformer: {
-      to: (value: number) => value?.toString(),
-      from: (value: string) => (value ? Number(value) : value),
-    },
-  })
-  hourlyVolumeToken1: number;
-
-  @Column('decimal', {
-    precision: 500,
-    scale: 5,
-    transformer: {
-      to: (value: number) => value?.toString(),
-      from: (value: string) => (value ? Number(value) : value),
-    },
-  })
-  hourlyVolumeUSD: number;
-
-  @Column('decimal', {
-    precision: 500,
-    scale: 5,
-    transformer: {
-      to: (value: number) => value?.toString(),
-      from: (value: string) => (value ? Number(value) : value),
-    },
-  })
-  hourlyVolumeETH: number;
+  liquidityUSD: number;
 
   @Column('bigint', {
     transformer: {
@@ -120,7 +63,37 @@ export class PoolHourData {
       from: (value: string) => (value ? Number(value) : value),
     },
   })
-  hourlyTxns: number;
+  txCount: number;
+
+  @Column('decimal', {
+    precision: 500,
+    scale: 5,
+    transformer: {
+      to: (value: number) => value?.toString(),
+      from: (value: string) => (value ? Number(value) : value),
+    },
+  })
+  feesUSD: number;
+
+  @Column('decimal', {
+    precision: 500,
+    scale: 5,
+    transformer: {
+      to: (value: number) => value?.toString(),
+      from: (value: string) => (value ? Number(value) : value),
+    },
+  })
+  totalTradeVolumeETH: number;
+
+  @Column('decimal', {
+    precision: 500,
+    scale: 5,
+    transformer: {
+      to: (value: number) => value?.toString(),
+      from: (value: string) => (value ? Number(value) : value),
+    },
+  })
+  totalTradeVolumeUSD: number;
 
   @VersionColumn()
   version: number;
