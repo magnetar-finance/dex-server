@@ -11,6 +11,7 @@ export abstract class BaseFactoryDeployedContractService extends BaseService {
     BaseFactoryDeployedContractService.name,
   );
   protected readonly WATCHED_ADDRESSES: Set<string> = new Set();
+  protected readonly WATCHED_ADDRESSES_CHAINS: Map<string, number> = new Map();
   protected readonly ADDRESS_DEPLOYMENT_BLOCK: Record<string, number> = {};
 
   constructor(
