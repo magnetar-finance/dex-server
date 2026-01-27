@@ -597,6 +597,15 @@ export class V2PoolService
     token1.txCount = token1.txCount + 1;
     await this.tokenRepository.save(token1);
 
+    // Update data
+    const statistics = await this.loadStatistics();
+    statistics.totalTradeVolumeETH =
+      statistics.totalTradeVolumeETH + amount0ETH + amount1ETH;
+    statistics.totalTradeVolumeUSD =
+      statistics.totalTradeVolumeUSD + amount0USD + amount1USD;
+    statistics.txCount = statistics.txCount + 1;
+    await this.statisticsRepository.save(statistics);
+
     await this.releaseResource(swapEntry.chainId);
 
     return swapEntity;
