@@ -500,6 +500,9 @@ export class V2PoolService extends BaseFactoryDeployedContractService implements
 
         if (resolvableBurn !== null) {
           await this.resolveBurn(resolvableTransfer, resolvableBurn);
+          // Clear entries from cache
+          await this.cacheService.hDecache('burn', hash);
+          await this.cacheService.hDecache('transfer', hash);
         }
       }
 
