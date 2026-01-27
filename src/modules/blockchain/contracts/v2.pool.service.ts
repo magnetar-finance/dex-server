@@ -342,6 +342,10 @@ export class V2PoolService
     const amount1USD = amount1 * token1.derivedUSD;
     const amountUSD = amount0USD + amount1USD;
 
+    const amount0ETH = amount0 * token0.derivedETH;
+    const amount1ETH = amount1 * token1.derivedETH;
+    const amountETH = amount0ETH + amount1ETH;
+
     let mintEntity = this.mintRepository.create({
       transaction: transactionEntity,
       to: transferEntry.to,
@@ -393,6 +397,31 @@ export class V2PoolService
     );
 
     overallDayData.feesUSD = overallDayData.feesUSD + _pool.totalFeesUSD;
+    overallDayData.volumeETH = overallDayData.volumeETH + amountETH;
+    overallDayData.volumeUSD = overallDayData.volumeUSD + amountUSD;
+    await this.overallDayDataRepository.save(overallDayData);
+
+    poolDayData.dailyVolumeToken0 = poolDayData.dailyVolumeToken0 + amount0;
+    poolDayData.dailyVolumeToken1 = poolDayData.dailyVolumeToken1 + amount1;
+    poolDayData.dailyVolumeETH = poolDayData.dailyVolumeETH + amountETH;
+    poolDayData.dailyVolumeUSD = poolDayData.dailyVolumeUSD + amountUSD;
+    await this.poolDayDataRepository.save(poolDayData);
+
+    poolHourData.hourlyVolumeToken0 = poolHourData.hourlyVolumeToken0 + amount0;
+    poolHourData.hourlyVolumeToken1 = poolHourData.hourlyVolumeToken1 + amount1;
+    poolHourData.hourlyVolumeETH = poolHourData.hourlyVolumeETH + amountETH;
+    poolHourData.hourlyVolumeUSD = poolHourData.hourlyVolumeUSD + amountUSD;
+    await this.poolHourDataRepository.save(poolHourData);
+
+    token0DayData.dailyVolumeToken = token0DayData.dailyVolumeToken + amount0;
+    token0DayData.dailyVolumeETH = token0DayData.dailyVolumeETH + amount0ETH;
+    token0DayData.dailyVolumeUSD = token0DayData.dailyVolumeUSD + amount0USD;
+    await this.tokenDayDataRepository.save(token0DayData);
+
+    token1DayData.dailyVolumeToken = token1DayData.dailyVolumeToken + amount1;
+    token1DayData.dailyVolumeETH = token1DayData.dailyVolumeETH + amount1ETH;
+    token1DayData.dailyVolumeUSD = token1DayData.dailyVolumeUSD + amount1USD;
+    await this.tokenDayDataRepository.save(token1DayData);
 
     await this.releaseResource(transferEntry.chainId);
 
