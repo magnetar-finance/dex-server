@@ -1,11 +1,4 @@
-import {
-  Entity,
-  PrimaryColumn,
-  Column,
-  Index,
-  ManyToOne,
-  JoinColumn,
-} from 'typeorm';
+import { Entity, PrimaryColumn, Column, Index, ManyToOne, JoinColumn } from 'typeorm';
 import { Token } from './token.entity';
 
 @Entity('token_day_data')

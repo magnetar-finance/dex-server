@@ -1,9 +1,6 @@
 import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
 import { BaseFactoryDeployedContractService } from './base/base-factory-deployed';
-import {
-  CONNECTION_INFO,
-  DEFAULT_BLOCK_RANGE,
-} from '../../../common/variables';
+import { CONNECTION_INFO, DEFAULT_BLOCK_RANGE } from '../../../common/variables';
 import { InjectRepository } from '@nestjs/typeorm';
 import { CacheService } from '../../cache/cache.service';
 import { IndexerEventStatus } from '../../database/entities/indexer-event-status.entity';
@@ -25,6 +22,8 @@ import { PoolHourData } from '../../database/entities/pool-hour-data.entity';
 import { OverallDayData } from '../../database/entities/overall-day-data.entity';
 import { Statistics } from '../../database/entities/statistics.entity';
 import { TokenDayData } from '../../database/entities/token-day-data.entity';
+import { LiquidityPosition } from '../../database/entities/lp-position.entity';
+import { User } from '../../database/entities/user.entity';
 
 interface IResolvableTransaction {
   chainId: number;
@@ -34,6 +33,11 @@ interface IResolvableTransaction {
 }
 
 interface IResolvableMintTransaction extends IResolvableTransaction {
+  amount0: bigint;
+  amount1: bigint;
+}
+
+interface IResolvableBurnTransaction extends IResolvableTransaction {
   amount0: bigint;
   amount1: bigint;
 }
@@ -56,10 +60,7 @@ interface IResolvableSwapTransaction extends IResolvableTransaction {
 }
 
 @Injectable()
-export class V2PoolService
-  extends BaseFactoryDeployedContractService
-  implements OnModuleInit
-{
+export class V2PoolService extends BaseFactoryDeployedContractService implements OnModuleInit {
   private resolveTxs: boolean = false;
   private sequenceEv: boolean = false;
 
@@ -85,6 +86,10 @@ export class V2PoolService
     private readonly overallDayDataRepository: Repository<OverallDayData>,
     @InjectRepository(TokenDayData)
     private readonly tokenDayDataRepository: Repository<TokenDayData>,
+    @InjectRepository(LiquidityPosition)
+    private readonly liquidityPositionRepository: Repository<LiquidityPosition>,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
     private readonly oracle: OracleService,
   ) {
     super(connectionInfo, cacheService, repository, statisticsRepository);
@@ -107,10 +112,7 @@ export class V2PoolService
     // Watch pools
     pools.forEach((pool) => {
       this.WATCHED_ADDRESSES.add(pool.address.toLowerCase());
-      this.WATCHED_ADDRESSES_CHAINS.set(
-        pool.address.toLowerCase(),
-        pool.chainId,
-      );
+      this.WATCHED_ADDRESSES_CHAINS.set(pool.address.toLowerCase(), pool.chainId);
     });
   }
 
@@ -122,11 +124,7 @@ export class V2PoolService
     await this.haltUntilOpen(chainId);
     const lastBlockNumber = await this.getLatestBlockNumber(chainId);
 
-    const indexerEventStatus = await this.getIndexerEventStatus(
-      address,
-      'Mint',
-      chainId,
-    );
+    const indexerEventStatus = await this.getIndexerEventStatus(address, 'Mint', chainId);
 
     const connectionInfo = this.getConnectionInfo(chainId);
     const promises = connectionInfo.rpcInfos.map((rpcInfo) => {
@@ -135,8 +133,7 @@ export class V2PoolService
       const blockStart = lastBlockNumber
         ? Math.min(indexerEventStatus.lastBlockNumber + 1, lastBlockNumber)
         : indexerEventStatus.lastBlockNumber + 1;
-      const blockEnd =
-        blockStart + (rpcInfo.queryBlockRange || DEFAULT_BLOCK_RANGE);
+      const blockEnd = blockStart + (rpcInfo.queryBlockRange || DEFAULT_BLOCK_RANGE);
       indexerEventStatus.lastBlockNumber = lastBlockNumber
         ? Math.min(blockEnd, lastBlockNumber)
         : blockEnd; // We still want to update last processed block even if no data is available.
@@ -163,8 +160,7 @@ export class V2PoolService
           chainId,
         });
 
-        transactionEntity =
-          await this.transactionRepository.save(transactionEntity);
+        transactionEntity = await this.transactionRepository.save(transactionEntity);
       }
 
       // @author Kingsley Victor
@@ -179,11 +175,69 @@ export class V2PoolService
         logIndex: eventDatum.index,
       };
 
-      await this.cacheService.hCache(
-        'mint',
-        resolvableMint.hash,
-        resolvableMint,
-      );
+      await this.cacheService.hCache('mint', resolvableMint.hash, resolvableMint);
+    }
+
+    await this.indexerEventStatusRepository.save(indexerEventStatus);
+    await this.releaseResource(chainId);
+  }
+
+  private async handleBurn(address: string, chainId: number) {
+    await this.haltUntilOpen(chainId);
+    const lastBlockNumber = await this.getLatestBlockNumber(chainId);
+
+    const indexerEventStatus = await this.getIndexerEventStatus(address, 'Burn', chainId);
+
+    const connectionInfo = this.getConnectionInfo(chainId);
+    const promises = connectionInfo.rpcInfos.map((rpcInfo) => {
+      const provider = this.provider(rpcInfo, chainId);
+      const contract = this.getContract(address, provider);
+      const blockStart = lastBlockNumber
+        ? Math.min(indexerEventStatus.lastBlockNumber + 1, lastBlockNumber)
+        : indexerEventStatus.lastBlockNumber + 1;
+      const blockEnd = blockStart + (rpcInfo.queryBlockRange || DEFAULT_BLOCK_RANGE);
+      indexerEventStatus.lastBlockNumber = lastBlockNumber
+        ? Math.min(blockEnd, lastBlockNumber)
+        : blockEnd; // We still want to update last processed block even if no data is available.
+      return contract.queryFilter(contract.filters.Burn, blockStart, blockEnd);
+    });
+
+    // Wait for 3 secs
+    await this.waitFor(3000);
+    const eventData = await Promise.any(promises);
+
+    for (const eventDatum of eventData) {
+      const processedBlock = await eventDatum.getBlock();
+      const { amount0, amount1, sender } = eventDatum.args;
+      // Transaction
+      const transactionId = `${eventDatum.transactionHash.toLowerCase()}-${chainId}`;
+      let transactionEntity = await this.transactionRepository.findOneBy({
+        id: transactionId,
+      });
+      if (transactionEntity === null) {
+        transactionEntity = this.transactionRepository.create({
+          hash: eventDatum.transactionHash.toLowerCase(),
+          block: processedBlock.number,
+          timestamp: processedBlock.timestamp,
+          chainId,
+        });
+
+        transactionEntity = await this.transactionRepository.save(transactionEntity);
+      }
+
+      // @author Kingsley Victor
+      // Why this is needed: I am imagining situations where some dependent events are processed ahead of others (depends on the block range of the selected RPC provider though).
+      // For context, the Transfer event and the Mint event are emitted on the same transaction with the former coming first. The transfer event harbours data that we would need on the mint event table. I imagine that there are hypothetical scenarios where the mint event is processed before the transfer event, but we want to ensure integrity on the mint table, so we cache the result of the procession and do a look-up at a latter time against a cache for the transfer event
+      const resolvableBurn: IResolvableBurnTransaction = {
+        sender,
+        amount0,
+        amount1,
+        chainId,
+        hash: transactionEntity.hash,
+        logIndex: eventDatum.index,
+      };
+
+      await this.cacheService.hCache('burn', resolvableBurn.hash, resolvableBurn);
     }
 
     await this.indexerEventStatusRepository.save(indexerEventStatus);
@@ -194,11 +248,7 @@ export class V2PoolService
     await this.haltUntilOpen(chainId);
     const lastBlockNumber = await this.getLatestBlockNumber(chainId);
 
-    const indexerEventStatus = await this.getIndexerEventStatus(
-      address,
-      'Transfer',
-      chainId,
-    );
+    const indexerEventStatus = await this.getIndexerEventStatus(address, 'Transfer', chainId);
 
     const connectionInfo = this.getConnectionInfo(chainId);
     const promises = connectionInfo.rpcInfos.map((rpcInfo) => {
@@ -207,16 +257,11 @@ export class V2PoolService
       const blockStart = lastBlockNumber
         ? Math.min(indexerEventStatus.lastBlockNumber + 1, lastBlockNumber)
         : indexerEventStatus.lastBlockNumber + 1;
-      const blockEnd =
-        blockStart + (rpcInfo.queryBlockRange || DEFAULT_BLOCK_RANGE);
+      const blockEnd = blockStart + (rpcInfo.queryBlockRange || DEFAULT_BLOCK_RANGE);
       indexerEventStatus.lastBlockNumber = lastBlockNumber
         ? Math.min(blockEnd, lastBlockNumber)
         : blockEnd; // We still want to update last processed block even if no data is available.
-      return contract.queryFilter(
-        contract.filters.Transfer,
-        blockStart,
-        blockEnd,
-      );
+      return contract.queryFilter(contract.filters.Transfer, blockStart, blockEnd);
     });
 
     // Wait for 3 secs
@@ -240,8 +285,7 @@ export class V2PoolService
           chainId,
         });
 
-        transactionEntity =
-          await this.transactionRepository.save(transactionEntity);
+        transactionEntity = await this.transactionRepository.save(transactionEntity);
       }
 
       // @author Kingsley Victor
@@ -258,11 +302,7 @@ export class V2PoolService
         sender: transaction.from,
       };
 
-      await this.cacheService.hCache(
-        'transfer',
-        resolvableTransfer.hash,
-        resolvableTransfer,
-      );
+      await this.cacheService.hCache('transfer', resolvableTransfer.hash, resolvableTransfer);
     }
 
     await this.indexerEventStatusRepository.save(indexerEventStatus);
@@ -273,11 +313,7 @@ export class V2PoolService
     await this.haltUntilOpen(chainId);
     const lastBlockNumber = await this.getLatestBlockNumber(chainId);
 
-    const indexerEventStatus = await this.getIndexerEventStatus(
-      address,
-      'Swap',
-      chainId,
-    );
+    const indexerEventStatus = await this.getIndexerEventStatus(address, 'Swap', chainId);
 
     const connectionInfo = this.getConnectionInfo(chainId);
     const promises = connectionInfo.rpcInfos.map((rpcInfo) => {
@@ -286,8 +322,7 @@ export class V2PoolService
       const blockStart = lastBlockNumber
         ? Math.min(indexerEventStatus.lastBlockNumber + 1, lastBlockNumber)
         : indexerEventStatus.lastBlockNumber + 1;
-      const blockEnd =
-        blockStart + (rpcInfo.queryBlockRange || DEFAULT_BLOCK_RANGE);
+      const blockEnd = blockStart + (rpcInfo.queryBlockRange || DEFAULT_BLOCK_RANGE);
       indexerEventStatus.lastBlockNumber = lastBlockNumber
         ? Math.min(blockEnd, lastBlockNumber)
         : blockEnd; // We still want to update last processed block even if no data is available.
@@ -300,8 +335,7 @@ export class V2PoolService
 
     for (const eventDatum of eventData) {
       const processedBlock = await eventDatum.getBlock();
-      const { sender, to, amount0In, amount1In, amount0Out, amount1Out } =
-        eventDatum.args;
+      const { sender, to, amount0In, amount1In, amount0Out, amount1Out } = eventDatum.args;
       // Transaction
       const transactionId = `${eventDatum.transactionHash.toLowerCase()}-${chainId}`;
       let transactionEntity = await this.transactionRepository.findOneBy({
@@ -315,8 +349,7 @@ export class V2PoolService
           chainId,
         });
 
-        transactionEntity =
-          await this.transactionRepository.save(transactionEntity);
+        transactionEntity = await this.transactionRepository.save(transactionEntity);
       }
 
       // @author Kingsley Victor
@@ -336,11 +369,85 @@ export class V2PoolService
         sender,
       };
 
-      await this.cacheService.hCache(
-        'swap',
-        resolvableSwap.hash,
-        resolvableSwap,
-      );
+      await this.cacheService.hCache('swap', resolvableSwap.hash, resolvableSwap);
+    }
+
+    await this.indexerEventStatusRepository.save(indexerEventStatus);
+    await this.releaseResource(chainId);
+  }
+
+  private async handleSync(address: string, chainId: number) {
+    await this.haltUntilOpen(chainId);
+    const lastBlockNumber = await this.getLatestBlockNumber(chainId);
+
+    const indexerEventStatus = await this.getIndexerEventStatus(address, 'Sync', chainId);
+
+    const connectionInfo = this.getConnectionInfo(chainId);
+    const promises = connectionInfo.rpcInfos.map((rpcInfo) => {
+      const provider = this.provider(rpcInfo, chainId);
+      const contract = this.getContract(address, provider);
+      const blockStart = lastBlockNumber
+        ? Math.min(indexerEventStatus.lastBlockNumber + 1, lastBlockNumber)
+        : indexerEventStatus.lastBlockNumber + 1;
+      const blockEnd = blockStart + (rpcInfo.queryBlockRange || DEFAULT_BLOCK_RANGE);
+      indexerEventStatus.lastBlockNumber = lastBlockNumber
+        ? Math.min(blockEnd, lastBlockNumber)
+        : blockEnd; // We still want to update last processed block even if no data is available.
+      return contract.queryFilter(contract.filters.Sync, blockStart, blockEnd);
+    });
+
+    // Wait for 3 secs
+    await this.waitFor(3000);
+    const eventData = await Promise.any(promises);
+
+    for (const eventDatum of eventData) {
+      const { reserve0, reserve1 } = eventDatum.args;
+      const poolId = `${address.toLowerCase()}-${chainId}`;
+      const poolEntity = await this.poolRepository.findOneOrFail({
+        where: { id: poolId },
+        relations: { token0: true, token1: true },
+      });
+
+      const token0 = await this.loadTokenPrice(poolEntity.token0);
+      const token1 = await this.loadTokenPrice(poolEntity.token1);
+
+      const statistics = await this.loadStatistics();
+      statistics.totalVolumeLockedETH = statistics.totalVolumeLockedETH - poolEntity.reserveETH;
+
+      token0.totalLiquidity = token0.totalLiquidity - poolEntity.reserve0;
+      token1.totalLiquidity = token1.totalLiquidity - poolEntity.reserve1;
+
+      poolEntity.reserve0 = parseFloat(formatUnits(reserve0, token0.decimals));
+      poolEntity.reserve1 = parseFloat(formatUnits(reserve1, token1.decimals));
+
+      if (poolEntity.reserve1 > 0)
+        poolEntity.token0Price = poolEntity.reserve0 / poolEntity.reserve1;
+      else poolEntity.token0Price = 0;
+
+      if (poolEntity.reserve0 > 0)
+        poolEntity.token1Price = poolEntity.reserve1 / poolEntity.reserve0;
+      else poolEntity.token1Price = 0;
+
+      poolEntity.reserveETH =
+        poolEntity.reserve0 * token0.derivedETH + poolEntity.reserve1 * token1.derivedETH;
+      poolEntity.reserveUSD =
+        poolEntity.reserve0 * token0.derivedUSD + poolEntity.reserve1 * token1.derivedUSD;
+
+      statistics.totalVolumeLockedETH = statistics.totalVolumeLockedETH + poolEntity.reserveETH;
+      statistics.totalVolumeLockedUSD = statistics.totalVolumeLockedUSD + poolEntity.reserveUSD;
+
+      token0.totalLiquidity = token0.totalLiquidity + poolEntity.reserve0;
+      token0.totalLiquidityETH = token0.totalLiquidity * token0.derivedETH;
+      token0.totalLiquidityUSD = token0.totalLiquidity * token0.derivedUSD;
+
+      token1.totalLiquidity = token1.totalLiquidity + poolEntity.reserve1;
+      token1.totalLiquidityETH = token1.totalLiquidity * token1.derivedETH;
+      token1.totalLiquidityUSD = token1.totalLiquidity * token1.derivedUSD;
+
+      await this.poolRepository.save(poolEntity);
+      await this.statisticsRepository.save(statistics);
+      await this.tokenRepository.save(token0);
+      await this.tokenRepository.save(token1);
     }
 
     await this.indexerEventStatusRepository.save(indexerEventStatus);
@@ -350,8 +457,10 @@ export class V2PoolService
   private async sequenceEvents(address: string, chainId: number) {
     while (this.sequenceEv) {
       await this.handleTransfer(address, chainId);
+      await this.handleSync(address, chainId);
       await this.handleMint(address, chainId);
       await this.handleSwap(address, chainId);
+      await this.handleBurn(address, chainId);
     }
   }
 
@@ -369,20 +478,28 @@ export class V2PoolService
 
       for (const [hash, stringValue] of Object.entries(cachedTransfers)) {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        const resolvableTransfer: IResolvableTransferTransaction =
-          JSON.parse(stringValue);
+        const resolvableTransfer: IResolvableTransferTransaction = JSON.parse(stringValue);
         // Search for corresponding mint
-        const resolvableMint =
-          await this.cacheService.hObtain<IResolvableMintTransaction>(
-            'mint',
-            hash,
-          );
+        const resolvableMint = await this.cacheService.hObtain<IResolvableMintTransaction>(
+          'mint',
+          hash,
+        );
 
         if (resolvableMint !== null) {
           await this.resolveMint(resolvableTransfer, resolvableMint);
           // Clear entries from cache
           await this.cacheService.hDecache('mint', hash);
           await this.cacheService.hDecache('transfer', hash);
+        }
+
+        // Search for corresponding burn
+        const resolvableBurn = await this.cacheService.hObtain<IResolvableBurnTransaction>(
+          'burn',
+          hash,
+        );
+
+        if (resolvableBurn !== null) {
+          await this.resolveBurn(resolvableTransfer, resolvableBurn);
         }
       }
 
@@ -391,8 +508,7 @@ export class V2PoolService
 
       for (const [hash, stringValue] of Object.entries(cachedSwaps)) {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        const resolvableSwap: IResolvableSwapTransaction =
-          JSON.parse(stringValue);
+        const resolvableSwap: IResolvableSwapTransaction = JSON.parse(stringValue);
         await this.resolveSwap(resolvableSwap);
         // Clear entry
         await this.cacheService.hDecache('swap', hash);
@@ -434,6 +550,7 @@ export class V2PoolService
     const amount0ETH = amount0 * token0.derivedETH;
     const amount1ETH = amount1 * token1.derivedETH;
     const amountETH = amount0ETH + amount1ETH;
+    const liquidity = parseFloat(formatEther(transferEntry.amount));
 
     let mintEntity = this.mintRepository.create({
       transaction: transactionEntity,
@@ -446,6 +563,7 @@ export class V2PoolService
       sender: mintEntry.sender,
       logIndex: mintEntry.logIndex,
       timestamp: transactionEntity.timestamp,
+      liquidity,
     });
 
     mintEntity = await this.mintRepository.save(mintEntity);
@@ -453,8 +571,7 @@ export class V2PoolService
     token0.txCount = token0.txCount + 1;
     token1.txCount = token1.txCount + 1;
     poolEntity.txCount = poolEntity.txCount + 1;
-    poolEntity.totalSupply =
-      poolEntity.totalSupply + parseFloat(formatEther(transferEntry.amount));
+    poolEntity.totalSupply = poolEntity.totalSupply + liquidity;
 
     const [_t0, _t1, _pool] = await Promise.all([
       this.tokenRepository.save(token0),
@@ -467,9 +584,7 @@ export class V2PoolService
     statistics.txCount = statistics.txCount + 1;
     await this.statisticsRepository.save(statistics);
 
-    const overallDayData = await this.updateOverallDayData(
-      transactionEntity.timestamp,
-    );
+    const overallDayData = await this.updateOverallDayData(transactionEntity.timestamp);
     const poolDayData = await this.updatePoolDayData(
       transactionEntity.timestamp,
       poolEntity.address.toLowerCase(),
@@ -478,14 +593,8 @@ export class V2PoolService
       transactionEntity.timestamp,
       poolEntity.address.toLowerCase(),
     );
-    const token0DayData = await this.updateTokenDayData(
-      _t0,
-      transactionEntity.timestamp,
-    );
-    const token1DayData = await this.updateTokenDayData(
-      _t1,
-      transactionEntity.timestamp,
-    );
+    const token0DayData = await this.updateTokenDayData(_t0, transactionEntity.timestamp);
+    const token1DayData = await this.updateTokenDayData(_t1, transactionEntity.timestamp);
 
     overallDayData.feesUSD = overallDayData.feesUSD + _pool.totalFeesUSD;
     overallDayData.volumeETH = overallDayData.volumeETH + amountETH;
@@ -514,9 +623,94 @@ export class V2PoolService
     token1DayData.dailyVolumeUSD = token1DayData.dailyVolumeUSD + amount1USD;
     await this.tokenDayDataRepository.save(token1DayData);
 
+    await this.updateLiquidityPosition(
+      poolEntity.id,
+      transferEntry.to,
+      liquidity,
+      transactionEntity.block,
+      transactionEntity.hash,
+    );
+
     await this.releaseResource(transferEntry.chainId);
 
     return mintEntity;
+  }
+
+  private async resolveBurn(
+    transferEntry: IResolvableTransferTransaction,
+    burnEntry: IResolvableBurnTransaction,
+  ) {
+    await this.haltUntilOpen(transferEntry.chainId); // Halt resource access
+    // Find pool
+    const poolId = `${transferEntry.token}-${transferEntry.chainId}`;
+    const poolEntity = await this.poolRepository.findOneOrFail({
+      where: { id: poolId },
+      relations: { token0: true, token1: true },
+    });
+    await this.waitFor(2000); // Wait for 2 secs
+
+    const token0 = await this.loadTokenPrice(poolEntity.token0);
+    const token1 = await this.loadTokenPrice(poolEntity.token1);
+
+    // Find transaction
+    const txId = `${transferEntry.hash}-${transferEntry.chainId}`;
+    const transactionEntity = await this.transactionRepository.findOneByOrFail({
+      id: txId,
+    });
+
+    // Tokens metadata
+    await this.waitFor(3000); // wait for 3 secs
+
+    const amount0 = parseFloat(formatUnits(burnEntry.amount0, token0.decimals));
+    const amount1 = parseFloat(formatUnits(burnEntry.amount1, token1.decimals));
+    const amount0USD = amount0 * token0.derivedUSD;
+    const amount1USD = amount1 * token1.derivedUSD;
+    const amountUSD = amount0USD + amount1USD;
+    const liquidity = parseFloat(formatEther(transferEntry.amount));
+
+    let burnEntity = this.burnRepository.create({
+      transaction: transactionEntity,
+      to: transferEntry.to,
+      chainId: transactionEntity.chainId,
+      pool: poolEntity,
+      amount0,
+      amount1,
+      amountUSD,
+      sender: burnEntry.sender,
+      logIndex: burnEntry.logIndex,
+      timestamp: transactionEntity.timestamp,
+      liquidity,
+    });
+
+    burnEntity = await this.burnRepository.save(burnEntity);
+
+    token0.txCount = token0.txCount + 1;
+    token1.txCount = token1.txCount + 1;
+    poolEntity.txCount = poolEntity.txCount + 1;
+    poolEntity.totalSupply = poolEntity.totalSupply + liquidity;
+
+    const [_t0, _t1] = await Promise.all([
+      this.tokenRepository.save(token0),
+      this.tokenRepository.save(token1),
+      this.poolRepository.save(poolEntity),
+    ]);
+
+    // Update data
+    const statistics = await this.loadStatistics();
+    statistics.txCount = statistics.txCount + 1;
+    await this.statisticsRepository.save(statistics);
+
+    await this.updateOverallDayData(transactionEntity.timestamp);
+    await this.updatePoolDayData(transactionEntity.timestamp, poolEntity.address.toLowerCase());
+    await this.updatePoolHourData(transactionEntity.timestamp, poolEntity.address.toLowerCase());
+    await this.updateTokenDayData(_t0, transactionEntity.timestamp);
+    await this.updateTokenDayData(_t1, transactionEntity.timestamp);
+
+    await this.updateLiquidityPosition(poolEntity.id, transferEntry.to, -liquidity);
+
+    await this.releaseResource(transferEntry.chainId);
+
+    return burnEntity;
   }
 
   private async resolveSwap(swapEntry: IResolvableSwapTransaction) {
@@ -531,8 +725,8 @@ export class V2PoolService
 
     await this.waitFor(2000); // Wait for 2 secs
 
-    const token0 = await this.loadTokenPrice(poolEntity.token0);
-    const token1 = await this.loadTokenPrice(poolEntity.token1);
+    let token0 = await this.loadTokenPrice(poolEntity.token0);
+    let token1 = await this.loadTokenPrice(poolEntity.token1);
 
     // Find transaction
     const txId = `${swapEntry.hash}-${swapEntry.chainId}`;
@@ -543,18 +737,10 @@ export class V2PoolService
     // Tokens metadata
     await this.waitFor(3000); // wait for 3 secs
 
-    const amount0In = parseFloat(
-      formatUnits(swapEntry.amount0In, token0.decimals),
-    );
-    const amount1In = parseFloat(
-      formatUnits(swapEntry.amount1In, token1.decimals),
-    );
-    const amount0Out = parseFloat(
-      formatUnits(swapEntry.amount0Out, token0.decimals),
-    );
-    const amount1Out = parseFloat(
-      formatUnits(swapEntry.amount1Out, token1.decimals),
-    );
+    const amount0In = parseFloat(formatUnits(swapEntry.amount0In, token0.decimals));
+    const amount1In = parseFloat(formatUnits(swapEntry.amount1In, token1.decimals));
+    const amount0Out = parseFloat(formatUnits(swapEntry.amount0Out, token0.decimals));
+    const amount1Out = parseFloat(formatUnits(swapEntry.amount1Out, token1.decimals));
     const amount0Total = amount0In + amount0Out;
     const amount1Total = amount1In + amount1Out;
     const amount0ETH = amount0Total * token0.derivedETH;
@@ -590,21 +776,58 @@ export class V2PoolService
     token0.tradeVolume = token0.tradeVolume + amount0Total;
     token0.tradeVolumeUSD = token0.tradeVolumeUSD + amount0USD;
     token0.txCount = token0.txCount + 1;
-    await this.tokenRepository.save(token0);
+    token0 = await this.tokenRepository.save(token0);
 
     token1.tradeVolume = token1.tradeVolume + amount1Total;
     token1.tradeVolumeUSD = token1.tradeVolumeUSD + amount1USD;
     token1.txCount = token1.txCount + 1;
-    await this.tokenRepository.save(token1);
+    token1 = await this.tokenRepository.save(token1);
 
     // Update data
     const statistics = await this.loadStatistics();
-    statistics.totalTradeVolumeETH =
-      statistics.totalTradeVolumeETH + amount0ETH + amount1ETH;
-    statistics.totalTradeVolumeUSD =
-      statistics.totalTradeVolumeUSD + amount0USD + amount1USD;
+    statistics.totalTradeVolumeETH = statistics.totalTradeVolumeETH + amount0ETH + amount1ETH;
+    statistics.totalTradeVolumeUSD = statistics.totalTradeVolumeUSD + amount0USD + amount1USD;
     statistics.txCount = statistics.txCount + 1;
     await this.statisticsRepository.save(statistics);
+
+    const overallDayData = await this.updateOverallDayData(transactionEntity.timestamp);
+    const poolDayData = await this.updatePoolDayData(
+      transactionEntity.timestamp,
+      poolEntity.address.toLowerCase(),
+    );
+    const poolHourData = await this.updatePoolHourData(
+      transactionEntity.timestamp,
+      poolEntity.address.toLowerCase(),
+    );
+    const token0DayData = await this.updateTokenDayData(token0, transactionEntity.timestamp);
+    const token1DayData = await this.updateTokenDayData(token0, transactionEntity.timestamp);
+
+    overallDayData.feesUSD = overallDayData.feesUSD + poolEntity.totalFeesUSD;
+    overallDayData.volumeETH = overallDayData.volumeETH + amount0ETH + amount1ETH;
+    overallDayData.volumeUSD = overallDayData.volumeUSD + amount0USD + amount1USD;
+    await this.overallDayDataRepository.save(overallDayData);
+
+    poolDayData.dailyVolumeToken0 = poolDayData.dailyVolumeToken0 + amount0Total;
+    poolDayData.dailyVolumeToken1 = poolDayData.dailyVolumeToken1 + amount1Total;
+    poolDayData.dailyVolumeETH = poolDayData.dailyVolumeETH + amount0ETH + amount1ETH;
+    poolDayData.dailyVolumeUSD = poolDayData.dailyVolumeUSD + amount0USD + amount1USD;
+    await this.poolDayDataRepository.save(poolDayData);
+
+    poolHourData.hourlyVolumeToken0 = poolHourData.hourlyVolumeToken0 + amount0Total;
+    poolHourData.hourlyVolumeToken1 = poolHourData.hourlyVolumeToken1 + amount1Total;
+    poolHourData.hourlyVolumeETH = poolHourData.hourlyVolumeETH + amount0ETH + amount1ETH;
+    poolHourData.hourlyVolumeUSD = poolHourData.hourlyVolumeUSD + amount0USD + amount1USD;
+    await this.poolHourDataRepository.save(poolHourData);
+
+    token0DayData.dailyVolumeToken = token0DayData.dailyVolumeToken + amount0Total;
+    token0DayData.dailyVolumeETH = token0DayData.dailyVolumeETH + amount0ETH;
+    token0DayData.dailyVolumeUSD = token0DayData.dailyVolumeUSD + amount0USD;
+    await this.tokenDayDataRepository.save(token0DayData);
+
+    token1DayData.dailyVolumeToken = token1DayData.dailyVolumeToken + amount1Total;
+    token1DayData.dailyVolumeETH = token1DayData.dailyVolumeETH + amount1ETH;
+    token1DayData.dailyVolumeUSD = token1DayData.dailyVolumeUSD + amount1USD;
+    await this.tokenDayDataRepository.save(token1DayData);
 
     await this.releaseResource(swapEntry.chainId);
 
@@ -619,18 +842,51 @@ export class V2PoolService
   }
 
   private async loadTokenPrice(token: Token): Promise<Token> {
-    token.derivedUSD = await this.oracle.getPriceInUSD(
-      token.address,
-      token.chainId,
-    );
-    token.derivedETH = await this.oracle.getPriceInETH(
-      token.address,
-      token.chainId,
-    );
+    token.derivedUSD = await this.oracle.getPriceInUSD(token.address, token.chainId);
+    token.derivedETH = await this.oracle.getPriceInETH(token.address, token.chainId);
 
     // Update token
     token = await this.tokenRepository.save(token);
     return token;
+  }
+
+  private async updateLiquidityPosition(
+    poolId: string,
+    account: string,
+    amount: number,
+    blockNumber?: number,
+    transaction?: string,
+  ) {
+    const pool = await this.poolRepository.findOneByOrFail({ id: poolId });
+    let user = await this.userRepository.findOneBy({ id: account.toLowerCase() });
+
+    if (user === null) {
+      user = this.userRepository.create({
+        address: account,
+      });
+      user = await this.userRepository.save(user);
+    }
+
+    let lpPosition = await this.liquidityPositionRepository.findOneBy({
+      pool: { id: pool.id },
+      account: { id: user.id },
+    });
+
+    if (lpPosition === null) {
+      lpPosition = this.liquidityPositionRepository.create({
+        account: user,
+        pool,
+        position: 0,
+        creationBlock: blockNumber,
+        creationTransaction: transaction,
+        chainId: pool.chainId,
+      });
+
+      lpPosition = await this.liquidityPositionRepository.save(lpPosition);
+    }
+
+    lpPosition.position = lpPosition.position + amount;
+    return this.liquidityPositionRepository.save(lpPosition);
   }
 
   private async updateOverallDayData(timestamp: number) {

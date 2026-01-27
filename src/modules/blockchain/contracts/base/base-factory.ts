@@ -15,12 +15,7 @@ export abstract class BaseFactoryContractService extends BaseService {
     indexerEventStatusRepository: Repository<IndexerEventStatus>,
     statisticsRepository: Repository<Statistics>,
   ) {
-    super(
-      chainConnectionInfos,
-      cacheService,
-      indexerEventStatusRepository,
-      statisticsRepository,
-    );
+    super(chainConnectionInfos, cacheService, indexerEventStatusRepository, statisticsRepository);
   }
 
   protected async getIndexerEventStatus(eventName: string, chainId: number) {
@@ -38,8 +33,7 @@ export abstract class BaseFactoryContractService extends BaseService {
         contractAddress,
         lastBlockNumber,
       });
-      indexerEventStatus =
-        await this.indexerEventStatusRepository.save(indexerEventStatus);
+      indexerEventStatus = await this.indexerEventStatusRepository.save(indexerEventStatus);
     }
     return indexerEventStatus;
   }

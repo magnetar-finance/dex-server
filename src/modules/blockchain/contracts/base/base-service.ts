@@ -94,8 +94,7 @@ export abstract class BaseService {
     const resourceKey = `${RESOURCE_LOCK}-${chainId}`;
     const resourceValue = await this.cacheService.obtain<string>(resourceKey);
 
-    if (resourceValue === this.lockId)
-      return this.cacheService.decache(resourceKey);
+    if (resourceValue === this.lockId) return this.cacheService.decache(resourceKey);
     return false;
   }
 
@@ -112,9 +111,10 @@ export abstract class BaseService {
   }
 
   getOverallMetrics() {
-    const totalProcessedEvents = Array.from(
-      this.eventsProcessed.values(),
-    ).reduce((accumulator, presentValue) => accumulator + presentValue, 0);
+    const totalProcessedEvents = Array.from(this.eventsProcessed.values()).reduce(
+      (accumulator, presentValue) => accumulator + presentValue,
+      0,
+    );
     const runTimeInSecs = (Date.now() - this.startTime) / 1000;
     return {
       processedEvents: totalProcessedEvents,

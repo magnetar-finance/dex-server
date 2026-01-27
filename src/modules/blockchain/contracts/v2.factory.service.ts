@@ -3,11 +3,7 @@ import { BaseFactoryContractService } from './base/base-factory';
 import { ChainConnectionInfo } from '../interfaces';
 import { Factory, Factory__factory } from './typechain';
 import { JsonRpcProvider } from 'ethers';
-import {
-  ChainIds,
-  CONNECTION_INFO,
-  DEFAULT_BLOCK_RANGE,
-} from '../../../common/variables';
+import { ChainIds, CONNECTION_INFO, DEFAULT_BLOCK_RANGE } from '../../../common/variables';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IndexerEventStatus } from '../../database/entities/indexer-event-status.entity';
 import { Token } from '../../database/entities/token.entity';
@@ -31,12 +27,7 @@ export class V2FactoryService extends BaseFactoryContractService {
     @InjectRepository(Pool) private readonly poolRepository: Repository<Pool>,
     private readonly eventEmitter: EventEmitter2,
   ) {
-    super(
-      connectionInfo,
-      cacheService,
-      indexerEventStatusRepository,
-      statisticsRepository,
-    );
+    super(connectionInfo, cacheService, indexerEventStatusRepository, statisticsRepository);
     this.initializeContracts();
     this.initializeStartBlocks();
   }
@@ -65,10 +56,7 @@ export class V2FactoryService extends BaseFactoryContractService {
 
     const lastBlockNumber = await this.getLatestBlockNumber(chainId);
 
-    const indexerEventStatus = await this.getIndexerEventStatus(
-      'PoolCreated',
-      chainId,
-    );
+    const indexerEventStatus = await this.getIndexerEventStatus('PoolCreated', chainId);
     const connectionInfo = this.getConnectionInfo(chainId);
     const promises = connectionInfo.rpcInfos.map((rpcInfo) => {
       const provider = this.provider(rpcInfo, chainId);
@@ -76,16 +64,11 @@ export class V2FactoryService extends BaseFactoryContractService {
       const blockStart = lastBlockNumber
         ? Math.min(indexerEventStatus.lastBlockNumber + 1, lastBlockNumber)
         : indexerEventStatus.lastBlockNumber + 1;
-      const blockEnd =
-        blockStart + (rpcInfo.queryBlockRange || DEFAULT_BLOCK_RANGE);
+      const blockEnd = blockStart + (rpcInfo.queryBlockRange || DEFAULT_BLOCK_RANGE);
       indexerEventStatus.lastBlockNumber = lastBlockNumber
         ? Math.min(blockEnd, lastBlockNumber)
         : blockEnd; // We still want to update last processed block even if no data is available.
-      return contract.queryFilter(
-        contract.filters.PoolCreated,
-        blockStart,
-        blockEnd,
-      );
+      return contract.queryFilter(contract.filters.PoolCreated, blockStart, blockEnd);
     });
 
     // Wait for 3 secs
@@ -104,10 +87,7 @@ export class V2FactoryService extends BaseFactoryContractService {
       let token1Entity = await this.tokenRepository.findOneBy({ id: token1Id });
 
       if (token0Entity === null) {
-        const { name, symbol, decimals } = await this.getERC20Metadata(
-          token0,
-          chainId,
-        );
+        const { name, symbol, decimals } = await this.getERC20Metadata(token0, chainId);
         token0Entity = this.tokenRepository.create({
           name,
           symbol,
@@ -127,10 +107,7 @@ export class V2FactoryService extends BaseFactoryContractService {
       }
 
       if (token1Entity === null) {
-        const { name, symbol, decimals } = await this.getERC20Metadata(
-          token1,
-          chainId,
-        );
+        const { name, symbol, decimals } = await this.getERC20Metadata(token1, chainId);
         token1Entity = this.tokenRepository.create({
           name,
           symbol,

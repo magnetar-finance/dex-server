@@ -18,14 +18,10 @@ export class IndexerEventStatus {
     comment: 'Last processed block for this event',
     transformer: {
       from(value: string | bigint | null | undefined): number {
-        return value !== null && typeof value !== 'undefined'
-          ? parseInt(value.toString())
-          : 0;
+        return value !== null && typeof value !== 'undefined' ? parseInt(value.toString()) : 0;
       },
       to(value: number | null | undefined) {
-        return value !== null && typeof value !== 'undefined'
-          ? value.toString()
-          : null;
+        return value !== null && typeof value !== 'undefined' ? value.toString() : null;
       },
     },
   })

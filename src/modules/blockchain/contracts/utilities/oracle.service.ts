@@ -68,10 +68,7 @@ export class OracleService implements OnModuleInit {
     const promises = connectionInfo.rpcInfos.map(async (rpcInfo) => {
       const provider = this.provider(rpcInfo, chainId);
 
-      const oracle = Oracle__factory.connect(
-        this.CONTRACT_ADDRESSES[chainId],
-        provider,
-      );
+      const oracle = Oracle__factory.connect(this.CONTRACT_ADDRESSES[chainId], provider);
       return oracle.getAverageValueInUSD(token, ONE);
     });
 
@@ -86,10 +83,7 @@ export class OracleService implements OnModuleInit {
     const promises = connectionInfo.rpcInfos.map(async (rpcInfo) => {
       const provider = this.provider(rpcInfo, chainId);
 
-      const oracle = Oracle__factory.connect(
-        this.CONTRACT_ADDRESSES[chainId],
-        provider,
-      );
+      const oracle = Oracle__factory.connect(this.CONTRACT_ADDRESSES[chainId], provider);
       return oracle.getAverageValueInETH(token, ONE);
     });
 

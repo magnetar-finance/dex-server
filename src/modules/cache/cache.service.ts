@@ -50,8 +50,7 @@ export class CacheService {
   async obtain<T>(key: string, del: boolean = false): Promise<T | null> {
     try {
       const cachedValue = await this.client.get(key);
-      const parsedValue =
-        cachedValue !== null ? this.parseString<T>(cachedValue) : null;
+      const parsedValue = cachedValue !== null ? this.parseString<T>(cachedValue) : null;
       if (del) await this.client.del(key);
       return parsedValue;
     } catch (error: any) {
@@ -64,15 +63,10 @@ export class CacheService {
     }
   }
 
-  async hObtain<T>(
-    key: string,
-    field: string,
-    del: boolean = false,
-  ): Promise<T | null> {
+  async hObtain<T>(key: string, field: string, del: boolean = false): Promise<T | null> {
     try {
       const cachedValue = await this.client.hGet(key, field);
-      const parsedValue =
-        cachedValue !== null ? this.parseString<T>(cachedValue) : null;
+      const parsedValue = cachedValue !== null ? this.parseString<T>(cachedValue) : null;
       if (del) await this.client.hDel(key, field);
       return parsedValue;
     } catch (error: any) {
@@ -127,9 +121,7 @@ export class CacheService {
     }
   }
 
-  private stringifyIfNeeded(
-    value: string | number | Record<string, any>,
-  ): string {
+  private stringifyIfNeeded(value: string | number | Record<string, any>): string {
     if (typeof value === 'string') return value;
     if (typeof value === 'number') return String(value);
     return JSON.stringify(value);
@@ -138,9 +130,7 @@ export class CacheService {
   private parseString<T>(value: string): T {
     try {
       const possibleNumber = parseFloat(value);
-      return !isNaN(possibleNumber)
-        ? (possibleNumber as T)
-        : (JSON.parse(value) as T);
+      return !isNaN(possibleNumber) ? (possibleNumber as T) : (JSON.parse(value) as T);
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
     } catch (_error: any) {
       return value as T; // Return the value if parsing fails.
