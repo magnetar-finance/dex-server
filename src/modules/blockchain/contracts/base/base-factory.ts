@@ -4,6 +4,7 @@ import { IndexerEventStatus } from '../../../database/entities/indexer-event-sta
 import { DEFAULT_BLOCK_START } from '../../../../common/variables';
 import { CacheService } from '../../../cache/cache.service';
 import { BaseService } from './base-service';
+import { Statistics } from '../../../database/entities/statistics.entity';
 
 export abstract class BaseFactoryContractService extends BaseService {
   protected CONTRACT_ADDRESSES: { [key: number]: string };
@@ -12,8 +13,9 @@ export abstract class BaseFactoryContractService extends BaseService {
     chainConnectionInfos: ChainConnectionInfo[],
     cacheService: CacheService,
     indexerEventStatusRepository: Repository<IndexerEventStatus>,
+    statisticsRepository: Repository<Statistics>,
   ) {
-    super(chainConnectionInfos, cacheService, indexerEventStatusRepository);
+    super(chainConnectionInfos, cacheService, indexerEventStatusRepository, statisticsRepository);
   }
 
   protected async getIndexerEventStatus(eventName: string, chainId: number) {
@@ -31,8 +33,7 @@ export abstract class BaseFactoryContractService extends BaseService {
         contractAddress,
         lastBlockNumber,
       });
-      indexerEventStatus =
-        await this.indexerEventStatusRepository.save(indexerEventStatus);
+      indexerEventStatus = await this.indexerEventStatusRepository.save(indexerEventStatus);
     }
     return indexerEventStatus;
   }

@@ -9,12 +9,7 @@ export interface RegistrationOptions {
   port?: number;
 }
 
-export interface RegistrationAsyncOptions extends Pick<
-  ModuleMetadata,
-  'imports'
-> {
-  useFactory?: (
-    ...args: any[]
-  ) => Promise<RegistrationOptions> | RegistrationOptions;
+export interface RegistrationAsyncOptions extends Pick<ModuleMetadata, 'imports'> {
+  useFactory?: (...args: any[]) => Promise<RegistrationOptions> | RegistrationOptions;
   inject?: any[];
 }

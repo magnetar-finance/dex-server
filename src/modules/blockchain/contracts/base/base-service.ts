@@ -7,6 +7,7 @@ import { CacheService } from '../../../cache/cache.service';
 import { randomUUID } from 'crypto';
 import { Erc20__factory } from '../typechain';
 import { RESOURCE_LOCK } from '../../../../common/variables';
+import { Statistics } from '../../../database/entities/statistics.entity';
 
 export abstract class BaseService {
   protected readonly logger = new Logger(BaseService.name);
@@ -23,6 +24,7 @@ export abstract class BaseService {
     private readonly chainConnectionInfos: ChainConnectionInfo[],
     protected readonly cacheService: CacheService,
     protected readonly indexerEventStatusRepository: Repository<IndexerEventStatus>,
+    protected readonly statisticsRepository: Repository<Statistics>,
   ) {
     this.initialize();
   }
@@ -92,8 +94,7 @@ export abstract class BaseService {
     const resourceKey = `${RESOURCE_LOCK}-${chainId}`;
     const resourceValue = await this.cacheService.obtain<string>(resourceKey);
 
-    if (resourceValue === this.lockId)
-      return this.cacheService.decache(resourceKey);
+    if (resourceValue === this.lockId) return this.cacheService.decache(resourceKey);
     return false;
   }
 
@@ -110,9 +111,10 @@ export abstract class BaseService {
   }
 
   getOverallMetrics() {
-    const totalProcessedEvents = Array.from(
-      this.eventsProcessed.values(),
-    ).reduce((accumulator, presentValue) => accumulator + presentValue, 0);
+    const totalProcessedEvents = Array.from(this.eventsProcessed.values()).reduce(
+      (accumulator, presentValue) => accumulator + presentValue,
+      0,
+    );
     const runTimeInSecs = (Date.now() - this.startTime) / 1000;
     return {
       processedEvents: totalProcessedEvents,
@@ -129,5 +131,23 @@ export abstract class BaseService {
       eventsPerSeconds: Math.floor(processedEvents / runTimeInSecs),
       runTimeInMinutes: runTimeInSecs / 60,
     };
+  }
+
+  protected async loadStatistics() {
+    let statistics = await this.statisticsRepository.findOneBy({ id: 1 });
+    if (statistics === null) {
+      statistics = this.statisticsRepository.create({
+        totalBribesUSD: 0,
+        totalFeesUSD: 0,
+        totalPairsCreated: 0,
+        totalTradeVolumeETH: 0,
+        totalTradeVolumeUSD: 0,
+        totalVolumeLockedETH: 0,
+        totalVolumeLockedUSD: 0,
+        txCount: 0,
+      });
+      statistics = await this.statisticsRepository.save(statistics);
+    }
+    return statistics;
   }
 }

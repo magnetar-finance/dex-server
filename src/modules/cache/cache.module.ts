@@ -9,10 +9,7 @@ import {
 import { CacheService } from './cache.service';
 import { ModuleRef } from '@nestjs/core';
 import { createClient, type RedisClientType } from 'redis';
-import {
-  RegistrationAsyncOptions,
-  RegistrationOptions,
-} from './options.config';
+import { RegistrationAsyncOptions, RegistrationOptions } from './options.config';
 import {
   DEFAULT_NON_SECURE_REDIS_URI,
   DEFAULT_SECURE_REDIS_URI,
@@ -22,9 +19,7 @@ import {
 
 @Global()
 @Module({})
-export class CacheModule
-  implements OnApplicationShutdown, OnApplicationBootstrap
-{
+export class CacheModule implements OnApplicationShutdown, OnApplicationBootstrap {
   constructor(private readonly moduleRef: ModuleRef) {}
 
   static register(
