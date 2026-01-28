@@ -19,7 +19,7 @@ export abstract class BaseFactoryContractService extends BaseService {
   }
 
   protected async getIndexerEventStatus(eventName: string, chainId: number) {
-    const contractAddress = this.CONTRACT_ADDRESSES[chainId].toString();
+    const contractAddress = this.CONTRACT_ADDRESSES[chainId].toLowerCase();
     // Find status
     const statusId = `${eventName}-${contractAddress}:${chainId}`;
     let indexerEventStatus = await this.indexerEventStatusRepository.findOneBy({

@@ -1,4 +1,4 @@
-import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { BaseFactoryDeployedContractService } from './base/base-factory-deployed';
 import { CONNECTION_INFO, DEFAULT_BLOCK_RANGE } from '../../../common/variables';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -60,7 +60,10 @@ interface IResolvableSwapTransaction extends IResolvableTransaction {
 }
 
 @Injectable()
-export class V2PoolService extends BaseFactoryDeployedContractService implements OnModuleInit {
+export class V2PoolService
+  extends BaseFactoryDeployedContractService
+  implements OnModuleInit, OnModuleDestroy
+{
   private resolveTxs: boolean = false;
   private sequenceEv: boolean = false;
 
@@ -101,7 +104,15 @@ export class V2PoolService extends BaseFactoryDeployedContractService implements
     this.resolveTxs = true;
     this.sequenceEv = true;
 
-    await Promise.all([this.resolveTransactions(), this.sequenceAllEvents()]);
+    void this.resolveTransactions();
+    void this.sequenceAllEvents();
+  }
+
+  onModuleDestroy() {
+    this.resolveTxs = false;
+    this.sequenceEv = false;
+    this.WATCHED_ADDRESSES.clear();
+    this.WATCHED_ADDRESSES_CHAINS.clear();
   }
 
   private async initializeWatchedAddresses() {
@@ -473,6 +484,12 @@ export class V2PoolService extends BaseFactoryDeployedContractService implements
 
   private async resolveTransactions() {
     while (this.resolveTxs) {
+      // Make sure cache is connected
+      if (!this.cacheService.isConnected()) {
+        await this.waitFor(2000);
+        continue;
+      }
+
       // Fetch all cached transfers
       const cachedTransfers = await this.cacheService.hObtainAll('transfer');
 
@@ -803,7 +820,7 @@ export class V2PoolService extends BaseFactoryDeployedContractService implements
       poolEntity.address.toLowerCase(),
     );
     const token0DayData = await this.updateTokenDayData(token0, transactionEntity.timestamp);
-    const token1DayData = await this.updateTokenDayData(token0, transactionEntity.timestamp);
+    const token1DayData = await this.updateTokenDayData(token1, transactionEntity.timestamp);
 
     overallDayData.feesUSD = overallDayData.feesUSD + poolEntity.totalFeesUSD;
     overallDayData.volumeETH = overallDayData.volumeETH + amount0ETH + amount1ETH;
@@ -839,9 +856,14 @@ export class V2PoolService extends BaseFactoryDeployedContractService implements
 
   private async sequenceAllEvents() {
     const chains = Object.fromEntries(this.WATCHED_ADDRESSES_CHAINS);
+    const promises: Promise<void>[] = [];
+
     for (const pool of this.WATCHED_ADDRESSES.values()) {
-      await this.sequenceEvents(pool, chains[pool]);
+      promises.push(this.sequenceEvents(pool, chains[pool]));
     }
+
+    // All pools process in parallel
+    await Promise.all(promises);
   }
 
   private async loadTokenPrice(token: Token): Promise<Token> {

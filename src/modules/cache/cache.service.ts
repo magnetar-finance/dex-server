@@ -121,6 +121,10 @@ export class CacheService {
     }
   }
 
+  isConnected() {
+    return this.client.isOpen || this.client.isReady;
+  }
+
   private stringifyIfNeeded(value: string | number | Record<string, any>): string {
     if (typeof value === 'string') return value;
     if (typeof value === 'number') return String(value);

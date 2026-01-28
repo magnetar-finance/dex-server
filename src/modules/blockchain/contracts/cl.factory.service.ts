@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
 import { BaseFactoryContractService } from './base/base-factory';
 import { ChainConnectionInfo } from '../interfaces';
 import { ClFactory, ClFactory__factory } from './typechain';
@@ -13,7 +13,7 @@ import { CacheService } from '../../cache/cache.service';
 import { Statistics } from '../../database/entities/statistics.entity';
 
 @Injectable()
-export class CLFactoryService extends BaseFactoryContractService {
+export class CLFactoryService extends BaseFactoryContractService implements OnModuleInit {
   constructor(
     @Inject(CONNECTION_INFO) connectionInfo: ChainConnectionInfo[],
     cacheService: CacheService,
@@ -25,6 +25,9 @@ export class CLFactoryService extends BaseFactoryContractService {
     @InjectRepository(Pool) private readonly poolRepository: Repository<Pool>,
   ) {
     super(connectionInfo, cacheService, indexerStatusRepository, statisticsRepository);
+  }
+
+  onModuleInit() {
     this.initializeContracts();
     this.initializeStartBlocks();
   }
@@ -49,6 +52,7 @@ export class CLFactoryService extends BaseFactoryContractService {
   }
 
   async handlePoolCreated(chainId: number) {
+    this.logger.log(`Now sequencing pool creation event on ${chainId}`, 'CLFactoryService');
     await this.haltUntilOpen(chainId); // If resource is locked, halt at this point
 
     const lastBlockNumber = await this.getLatestBlockNumber(chainId);

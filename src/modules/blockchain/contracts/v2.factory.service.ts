@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
 import { BaseFactoryContractService } from './base/base-factory';
 import { ChainConnectionInfo } from '../interfaces';
 import { Factory, Factory__factory } from './typechain';
@@ -15,7 +15,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { EventTypes } from './types';
 
 @Injectable()
-export class V2FactoryService extends BaseFactoryContractService {
+export class V2FactoryService extends BaseFactoryContractService implements OnModuleInit {
   constructor(
     @Inject(CONNECTION_INFO) connectionInfo: ChainConnectionInfo[],
     cacheService: CacheService,
@@ -28,6 +28,10 @@ export class V2FactoryService extends BaseFactoryContractService {
     private readonly eventEmitter: EventEmitter2,
   ) {
     super(connectionInfo, cacheService, indexerEventStatusRepository, statisticsRepository);
+  }
+
+  async onModuleInit() {
+    await this.waitFor(10000); // Wait for 10 seconds
     this.initializeContracts();
     this.initializeStartBlocks();
   }
@@ -52,6 +56,8 @@ export class V2FactoryService extends BaseFactoryContractService {
   }
 
   async handlePoolCreated(chainId: number) {
+    this.logger.log(`Now sequencing pool creation event on ${chainId}`, 'V2FactoryService');
+    if (!this.cacheService.isConnected()) return;
     await this.haltUntilOpen(chainId); // If resource is locked, halt at this point
 
     const lastBlockNumber = await this.getLatestBlockNumber(chainId);
