@@ -94,10 +94,9 @@ export class CacheModule implements OnApplicationShutdown, OnApplicationBootstra
     };
   }
 
-  async onApplicationShutdown() {
+  onApplicationShutdown() {
     const redisClient = this.moduleRef.get<RedisClientType>(REDIS_CLIENT);
-    if (redisClient.isOpen || redisClient.isReady || redisClient.isWatching)
-      await redisClient.quit();
+    if (redisClient.isOpen || redisClient.isReady || redisClient.isWatching) redisClient.destroy();
   }
 
   async onApplicationBootstrap() {

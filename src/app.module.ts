@@ -12,6 +12,7 @@ import loadChainInfo from './config/blockchain.config';
 import { IndexerService } from './modules/indexer/indexer.service';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import appConfig from './config/app.config';
+import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import appConfig from './config/app.config';
       newListener: true,
       global: true,
     }),
+    ScheduleModule.forRoot(),
     ConfigModule.forRoot({
       load: [loadRedisConfig, loadPostgresConfig, appConfig],
       isGlobal: true,

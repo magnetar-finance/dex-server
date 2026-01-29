@@ -106,6 +106,11 @@ export class V2PoolService
 
     void this.resolveTransactions();
     void this.sequenceAllEvents();
+
+    process.on('SIGINT', () => {
+      this.sequenceEv = false;
+      this.resolveTxs = false;
+    });
   }
 
   onModuleDestroy() {
@@ -132,10 +137,41 @@ export class V2PoolService
   }
 
   private async handleMint(address: string, chainId: number) {
-    await this.haltUntilOpen(chainId);
-    const lastBlockNumber = await this.getLatestBlockNumber(chainId);
+    this.logger.log(`Now sequencing lp mint event on ${chainId}`, V2PoolService.name);
+    if (!this.cacheService.isConnected()) return;
+    await this.haltUntilOpen(chainId); // If resource is locked, halt at this point
+
+    let lastBlockNumber: number | undefined;
+
+    try {
+      this.logger.log(`Now fetching latest block number on ${chainId}`, V2PoolService.name);
+      lastBlockNumber = await this.getLatestBlockNumber(chainId);
+    } catch (error: any) {
+      // Release resource
+      await this.releaseResource(chainId);
+      this.logger.error(
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        `Unable to fetch latest block: ${error.message}`,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        error.stack,
+        V2PoolService.name,
+      );
+    }
+
+    if (typeof lastBlockNumber === 'undefined') return;
 
     const indexerEventStatus = await this.getIndexerEventStatus(address, 'Mint', chainId);
+
+    // We want to keep record in sync with chain
+    if (indexerEventStatus.lastBlockNumber >= lastBlockNumber) {
+      this.logger.debug(
+        `Indexer status check with ID ${indexerEventStatus.id} is up to date with current block. Skipping...`,
+        V2PoolService.name,
+      );
+      // Release resource
+      await this.releaseResource(chainId);
+      return;
+    }
 
     const connectionInfo = this.getConnectionInfo(chainId);
     const promises = connectionInfo.rpcInfos.map((rpcInfo) => {
@@ -194,10 +230,41 @@ export class V2PoolService
   }
 
   private async handleBurn(address: string, chainId: number) {
-    await this.haltUntilOpen(chainId);
-    const lastBlockNumber = await this.getLatestBlockNumber(chainId);
+    this.logger.log(`Now sequencing lp burn event on ${chainId}`, V2PoolService.name);
+    if (!this.cacheService.isConnected()) return;
+    await this.haltUntilOpen(chainId); // If resource is locked, halt at this point
+
+    let lastBlockNumber: number | undefined;
+
+    try {
+      this.logger.log(`Now fetching latest block number on ${chainId}`, V2PoolService.name);
+      lastBlockNumber = await this.getLatestBlockNumber(chainId);
+    } catch (error: any) {
+      // Release resource
+      await this.releaseResource(chainId);
+      this.logger.error(
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        `Unable to fetch latest block: ${error.message}`,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        error.stack,
+        V2PoolService.name,
+      );
+    }
+
+    if (typeof lastBlockNumber === 'undefined') return;
 
     const indexerEventStatus = await this.getIndexerEventStatus(address, 'Burn', chainId);
+
+    // We want to keep record in sync with chain
+    if (indexerEventStatus.lastBlockNumber >= lastBlockNumber) {
+      this.logger.debug(
+        `Indexer status check with ID ${indexerEventStatus.id} is up to date with current block. Skipping...`,
+        V2PoolService.name,
+      );
+      // Release resource
+      await this.releaseResource(chainId);
+      return;
+    }
 
     const connectionInfo = this.getConnectionInfo(chainId);
     const promises = connectionInfo.rpcInfos.map((rpcInfo) => {
@@ -256,10 +323,41 @@ export class V2PoolService
   }
 
   private async handleTransfer(address: string, chainId: number) {
-    await this.haltUntilOpen(chainId);
-    const lastBlockNumber = await this.getLatestBlockNumber(chainId);
+    this.logger.log(`Now sequencing lp transfer event on ${chainId}`, V2PoolService.name);
+    if (!this.cacheService.isConnected()) return;
+    await this.haltUntilOpen(chainId); // If resource is locked, halt at this point
+
+    let lastBlockNumber: number | undefined;
+
+    try {
+      this.logger.log(`Now fetching latest block number on ${chainId}`, V2PoolService.name);
+      lastBlockNumber = await this.getLatestBlockNumber(chainId);
+    } catch (error: any) {
+      // Release resource
+      await this.releaseResource(chainId);
+      this.logger.error(
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        `Unable to fetch latest block: ${error.message}`,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        error.stack,
+        V2PoolService.name,
+      );
+    }
+
+    if (typeof lastBlockNumber === 'undefined') return;
 
     const indexerEventStatus = await this.getIndexerEventStatus(address, 'Transfer', chainId);
+
+    // We want to keep record in sync with chain
+    if (indexerEventStatus.lastBlockNumber >= lastBlockNumber) {
+      this.logger.debug(
+        `Indexer status check with ID ${indexerEventStatus.id} is up to date with current block. Skipping...`,
+        V2PoolService.name,
+      );
+      // Release resource
+      await this.releaseResource(chainId);
+      return;
+    }
 
     const connectionInfo = this.getConnectionInfo(chainId);
     const promises = connectionInfo.rpcInfos.map((rpcInfo) => {
@@ -321,10 +419,41 @@ export class V2PoolService
   }
 
   private async handleSwap(address: string, chainId: number) {
-    await this.haltUntilOpen(chainId);
-    const lastBlockNumber = await this.getLatestBlockNumber(chainId);
+    this.logger.log(`Now sequencing lp swap event on ${chainId}`, V2PoolService.name);
+    if (!this.cacheService.isConnected()) return;
+    await this.haltUntilOpen(chainId); // If resource is locked, halt at this point
+
+    let lastBlockNumber: number | undefined;
+
+    try {
+      this.logger.log(`Now fetching latest block number on ${chainId}`, V2PoolService.name);
+      lastBlockNumber = await this.getLatestBlockNumber(chainId);
+    } catch (error: any) {
+      // Release resource
+      await this.releaseResource(chainId);
+      this.logger.error(
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        `Unable to fetch latest block: ${error.message}`,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        error.stack,
+        V2PoolService.name,
+      );
+    }
+
+    if (typeof lastBlockNumber === 'undefined') return;
 
     const indexerEventStatus = await this.getIndexerEventStatus(address, 'Swap', chainId);
+
+    // We want to keep record in sync with chain
+    if (indexerEventStatus.lastBlockNumber >= lastBlockNumber) {
+      this.logger.debug(
+        `Indexer status check with ID ${indexerEventStatus.id} is up to date with current block. Skipping...`,
+        V2PoolService.name,
+      );
+      // Release resource
+      await this.releaseResource(chainId);
+      return;
+    }
 
     const connectionInfo = this.getConnectionInfo(chainId);
     const promises = connectionInfo.rpcInfos.map((rpcInfo) => {
@@ -467,11 +596,16 @@ export class V2PoolService
 
   private async sequenceEvents(address: string, chainId: number) {
     while (this.sequenceEv) {
-      await this.handleTransfer(address, chainId);
-      await this.handleSync(address, chainId);
-      await this.handleMint(address, chainId);
-      await this.handleSwap(address, chainId);
-      await this.handleBurn(address, chainId);
+      try {
+        await this.handleTransfer(address, chainId);
+        await this.handleSync(address, chainId);
+        await this.handleMint(address, chainId);
+        await this.handleSwap(address, chainId);
+        await this.handleBurn(address, chainId);
+      } catch (error: any) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        this.logger.error(error.message, error.stack, V2PoolService.name);
+      }
     }
   }
 
