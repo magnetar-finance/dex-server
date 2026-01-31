@@ -564,7 +564,7 @@ export class CLPoolService
     token0.txCount = token0.txCount + 1;
     token1.txCount = token1.txCount + 1;
     poolEntity.txCount = poolEntity.txCount + 1;
-    poolEntity.totalSupply = poolEntity.totalSupply + liquidity;
+    poolEntity.totalSupply = poolEntity.totalSupply - liquidity;
 
     const [_t0, _t1] = await Promise.all([
       this.tokenRepository.save(token0),

@@ -6,14 +6,28 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { IndexerEventStatus } from '../../database/entities/indexer-event-status.entity';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { CacheService } from '../../cache/cache.service';
-import { Pool } from '../../database/entities/pool.entity';
+import { Pool, PoolType } from '../../database/entities/pool.entity';
 import { Statistics } from '../../database/entities/statistics.entity';
-import { Repository } from 'typeorm';
-import { Nfpm, Nfpm__factory } from './typechain';
-import { JsonRpcProvider, ZeroAddress } from 'ethers';
+import { ILike, Repository } from 'typeorm';
+import { ClFactory, Nfpm, Nfpm__factory } from './typechain';
+import { formatUnits, JsonRpcProvider, ZeroAddress } from 'ethers';
+import { User } from '../../database/entities/user.entity';
+import { LiquidityPosition } from '../../database/entities/lp-position.entity';
+
+interface IResolvableTransfer {
+  type: 'mint' | 'burn' | 'simple-transfer';
+  to: string;
+  from: string;
+  tokenId: number;
+  chainId: number;
+  blockNumber: number;
+  transactionHash: string;
+}
 
 @Injectable()
 export class NFPMContractService extends BaseFactoryContractService implements OnModuleInit {
+  private resolveTxs: boolean = false;
+
   constructor(
     @Inject(CONNECTION_INFO) connectionInfo: ChainConnectionInfo[],
     cacheService: CacheService,
@@ -21,6 +35,9 @@ export class NFPMContractService extends BaseFactoryContractService implements O
     indexerStatusRepository: Repository<IndexerEventStatus>,
     @InjectRepository(Statistics) statisticsRepository: Repository<Statistics>,
     @InjectRepository(Pool) private readonly poolRepository: Repository<Pool>,
+    @InjectRepository(User) private readonly userRepository: Repository<User>,
+    @InjectRepository(LiquidityPosition)
+    private readonly liquidityPositionRepository: Repository<LiquidityPosition>,
     private readonly eventEmitter: EventEmitter2,
   ) {
     super(connectionInfo, cacheService, indexerStatusRepository, statisticsRepository);
@@ -29,6 +46,9 @@ export class NFPMContractService extends BaseFactoryContractService implements O
   onModuleInit() {
     this.initializeContracts();
     this.initializeStartBlocks();
+
+    this.resolveTxs = true;
+    void this.resolveTransactions();
   }
 
   private initializeContracts() {
@@ -109,25 +129,149 @@ export class NFPMContractService extends BaseFactoryContractService implements O
       const eventData = await Promise.any(promises);
 
       for (const eventDatum of eventData) {
+        await this.waitFor(2000);
+        const processedBlock = await eventDatum.getBlock();
         const { from, to, tokenId } = eventDatum.args;
 
         const tokenIdAsNumber = parseInt(tokenId.toString());
+        const resolvableTransfer: IResolvableTransfer = {
+          type: from === ZeroAddress ? 'mint' : to === ZeroAddress ? 'burn' : 'simple-transfer',
+          to,
+          from,
+          tokenId: tokenIdAsNumber,
+          chainId,
+          blockNumber: processedBlock.number,
+          transactionHash: eventDatum.transactionHash.toLowerCase(),
+        };
 
         await this.cacheService.hCache(
           'nfpm-token-transfer',
           tokenId.toString(),
-          JSON.stringify({
-            type: from === ZeroAddress ? 'mint' : to === ZeroAddress ? 'burn' : 'simple-transfer',
-            to,
-            from,
-            tokenId: tokenIdAsNumber,
-          }),
+          JSON.stringify(resolvableTransfer),
         );
+
+        indexerEventStatus.lastBlockNumber = processedBlock.number;
+        this.updateChainMetric(chainId);
       }
     } catch (error: any) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       this.logger.error(error.message, error.stack, NFPMContractService.name);
       return;
     }
+
+    await this.indexerEventStatusRepository.save(indexerEventStatus);
+    await this.releaseResource(chainId);
+  }
+
+  private async resolveTransactions() {
+    while (this.resolveTxs) {
+      if (!this.cacheService.isConnected()) {
+        await this.waitFor(2000);
+        continue;
+      }
+
+      await this.resolveTransfers();
+    }
+  }
+
+  private async resolveTransfers() {
+    try {
+      const transfers = await this.cacheService.hObtainAll('nfpm-token-transfer');
+      for (const [tId, entry] of Object.entries(transfers)) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        const resolvableTransfer: IResolvableTransfer = JSON.parse(entry);
+        const { chainId, tokenId, to, blockNumber, transactionHash } = resolvableTransfer;
+        // Halt resource usage by other processes
+        await this.haltUntilOpen(chainId);
+
+        const connectionInfo = this.getConnectionInfo(chainId);
+        const positionPromises = connectionInfo.rpcInfos.map((rpcInfo) => {
+          const provider = this.provider(rpcInfo, chainId);
+          const contract = this.getNFPMContract(chainId, provider);
+          return contract.positions(tokenId);
+        });
+        await this.waitFor(2000);
+        // Find single position
+        const position = await Promise.any(positionPromises);
+        // Find pool
+        const pool = await this.poolRepository.findOneBy({
+          token0: { address: ILike(`%${position.token0}%`) },
+          token1: { address: ILike(`%${position.token1}%`) },
+          tickSpacing: parseInt(position.tickSpacing.toString()),
+          poolType: PoolType.CONCENTRATED,
+        });
+
+        if (pool === null) {
+          await this.releaseResource(chainId);
+          continue;
+        }
+
+        if (resolvableTransfer.type === 'mint') {
+          const liquidity = parseFloat(formatUnits(position.liquidity, 18));
+
+          await this.updateLiquidityPosition(
+            pool,
+            to,
+            liquidity,
+            tokenId,
+            blockNumber,
+            transactionHash,
+          );
+        } else if (resolvableTransfer.type === 'burn') {
+          const lp = await this.liquidityPositionRepository.findOneByOrFail({
+            pool: { id: pool.id },
+            clPositionTokenId: tokenId,
+          });
+          void this.liquidityPositionRepository.remove(lp);
+        }
+        await this.cacheService.hDecache('nfpm-token-transfer', tId);
+        await this.releaseResource(chainId);
+      }
+    } catch (error: any) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      this.logger.error(error.message, error.stack, NFPMContractService.name);
+      return;
+    }
+  }
+
+  private async updateLiquidityPosition(
+    pool: Pool,
+    account: string,
+    amount: number,
+    tokenId?: number,
+    blockNumber?: number,
+    transaction?: string,
+  ) {
+    let user = await this.userRepository.findOneBy({ id: account.toLowerCase() });
+
+    if (user === null) {
+      user = this.userRepository.create({
+        address: account,
+      });
+      user = await this.userRepository.save(user);
+    }
+
+    let lpPosition = await this.liquidityPositionRepository.findOneBy({
+      pool: { id: pool.id },
+      account: { id: user.id },
+      clPositionTokenId: tokenId,
+    });
+
+    if (lpPosition === null) {
+      lpPosition = this.liquidityPositionRepository.create({
+        account: user,
+        pool,
+        position: 0,
+        creationBlock: blockNumber,
+        creationTransaction: transaction,
+        chainId: pool.chainId,
+        clPositionTokenId: tokenId,
+      });
+
+      lpPosition = await this.liquidityPositionRepository.save(lpPosition);
+    }
+
+    lpPosition.position = lpPosition.position + amount;
+    return this.liquidityPositionRepository.save(lpPosition);
   }
 }
