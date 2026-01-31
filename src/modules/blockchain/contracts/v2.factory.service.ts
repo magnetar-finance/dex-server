@@ -50,7 +50,7 @@ export class V2FactoryService extends BaseFactoryContractService implements OnMo
     };
   }
 
-  private getContract(chainId: number, provider: JsonRpcProvider): Factory {
+  private getV2FactoryContract(chainId: number, provider: JsonRpcProvider): Factory {
     const contractAddress = this.CONTRACT_ADDRESSES[chainId];
     return Factory__factory.connect(contractAddress, provider);
   }
@@ -98,7 +98,7 @@ export class V2FactoryService extends BaseFactoryContractService implements OnMo
     const connectionInfo = this.getConnectionInfo(chainId);
     const promises = connectionInfo.rpcInfos.map((rpcInfo) => {
       const provider = this.provider(rpcInfo, chainId);
-      const contract = this.getContract(chainId, provider);
+      const contract = this.getV2FactoryContract(chainId, provider);
       const blockStart = lastBlockNumber
         ? Math.min(indexerEventStatus.lastBlockNumber + 1, lastBlockNumber)
         : indexerEventStatus.lastBlockNumber + 1;

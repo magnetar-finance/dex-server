@@ -4,6 +4,7 @@ import { CONNECTION_INFO } from '../../common/variables';
 import { V2PoolService } from './contracts/v2.pool.service';
 import { V2FactoryService } from './contracts/v2.factory.service';
 import { OracleService } from './contracts/utilities/oracle.service';
+import { CLFactoryService } from './contracts/cl.factory.service';
 
 @Global()
 @Module({})
@@ -16,10 +17,11 @@ export class BlockchainModule {
           useValue: chainConnectInfos,
         },
         V2FactoryService,
+        CLFactoryService,
         V2PoolService,
         OracleService,
       ],
-      exports: [CONNECTION_INFO, V2FactoryService, V2PoolService, OracleService],
+      exports: [CONNECTION_INFO, V2FactoryService, CLFactoryService, V2PoolService, OracleService],
       module: BlockchainModule,
     };
   }
