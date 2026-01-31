@@ -5,6 +5,7 @@ import { V2PoolService } from './contracts/v2.pool.service';
 import { V2FactoryService } from './contracts/v2.factory.service';
 import { OracleService } from './contracts/utilities/oracle.service';
 import { CLFactoryService } from './contracts/cl.factory.service';
+import { NFPMContractService } from './contracts/nfpm.service';
 
 @Global()
 @Module({})
@@ -19,9 +20,17 @@ export class BlockchainModule {
         V2FactoryService,
         CLFactoryService,
         V2PoolService,
+        NFPMContractService,
         OracleService,
       ],
-      exports: [CONNECTION_INFO, V2FactoryService, CLFactoryService, V2PoolService, OracleService],
+      exports: [
+        CONNECTION_INFO,
+        V2FactoryService,
+        CLFactoryService,
+        V2PoolService,
+        NFPMContractService,
+        OracleService,
+      ],
       module: BlockchainModule,
     };
   }

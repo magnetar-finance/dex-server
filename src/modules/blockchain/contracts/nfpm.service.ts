@@ -1,15 +1,14 @@
-import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { BaseFactoryContractService } from './base/base-factory';
 import { ChainIds, CONNECTION_INFO, DEFAULT_BLOCK_RANGE } from '../../../common/variables';
 import { ChainConnectionInfo } from '../interfaces';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IndexerEventStatus } from '../../database/entities/indexer-event-status.entity';
-import { EventEmitter2 } from '@nestjs/event-emitter';
 import { CacheService } from '../../cache/cache.service';
 import { Pool, PoolType } from '../../database/entities/pool.entity';
 import { Statistics } from '../../database/entities/statistics.entity';
 import { ILike, Repository } from 'typeorm';
-import { ClFactory, Nfpm, Nfpm__factory } from './typechain';
+import { Nfpm, Nfpm__factory } from './typechain';
 import { formatUnits, JsonRpcProvider, ZeroAddress } from 'ethers';
 import { User } from '../../database/entities/user.entity';
 import { LiquidityPosition } from '../../database/entities/lp-position.entity';
@@ -25,7 +24,10 @@ interface IResolvableTransfer {
 }
 
 @Injectable()
-export class NFPMContractService extends BaseFactoryContractService implements OnModuleInit {
+export class NFPMContractService
+  extends BaseFactoryContractService
+  implements OnModuleInit, OnModuleDestroy
+{
   private resolveTxs: boolean = false;
 
   constructor(
@@ -38,7 +40,6 @@ export class NFPMContractService extends BaseFactoryContractService implements O
     @InjectRepository(User) private readonly userRepository: Repository<User>,
     @InjectRepository(LiquidityPosition)
     private readonly liquidityPositionRepository: Repository<LiquidityPosition>,
-    private readonly eventEmitter: EventEmitter2,
   ) {
     super(connectionInfo, cacheService, indexerStatusRepository, statisticsRepository);
   }
@@ -49,6 +50,14 @@ export class NFPMContractService extends BaseFactoryContractService implements O
 
     this.resolveTxs = true;
     void this.resolveTransactions();
+
+    process.on('SIGINT', () => {
+      this.resolveTxs = false;
+    });
+  }
+
+  onModuleDestroy() {
+    this.resolveTxs = false;
   }
 
   private initializeContracts() {
@@ -71,7 +80,7 @@ export class NFPMContractService extends BaseFactoryContractService implements O
   }
 
   async handleTransfer(chainId: number) {
-    this.logger.log(`Now sequencing pool creation event on ${chainId}`, NFPMContractService.name);
+    this.logger.log(`Now sequencing transfer event on ${chainId}`, NFPMContractService.name);
     if (!this.cacheService.isConnected()) {
       await this.waitFor(2000);
       return;
@@ -222,7 +231,26 @@ export class NFPMContractService extends BaseFactoryContractService implements O
             pool: { id: pool.id },
             clPositionTokenId: tokenId,
           });
-          void this.liquidityPositionRepository.remove(lp);
+          await this.liquidityPositionRepository.remove(lp);
+        } else {
+          // Transfer
+          const lp = await this.liquidityPositionRepository.findOneByOrFail({
+            pool: { id: pool.id },
+            clPositionTokenId: tokenId,
+          });
+
+          const amount = lp.position;
+          lp.position = lp.position - amount;
+          await this.liquidityPositionRepository.save(lp);
+
+          await this.updateLiquidityPosition(
+            pool,
+            to,
+            amount,
+            tokenId,
+            blockNumber,
+            transactionHash,
+          );
         }
         await this.cacheService.hDecache('nfpm-token-transfer', tId);
         await this.releaseResource(chainId);

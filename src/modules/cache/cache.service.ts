@@ -122,7 +122,7 @@ export class CacheService {
   }
 
   isConnected() {
-    return this.client.isOpen || this.client.isReady;
+    return this.client.isOpen || this.client.isReady || this.client.isWatching;
   }
 
   private stringifyIfNeeded(value: string | number | Record<string, any>): string {
