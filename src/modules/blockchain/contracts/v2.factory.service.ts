@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
 import { BaseFactoryContractService } from './base/base-factory';
 import { ChainConnectionInfo } from '../interfaces';
 import { Factory, Factory__factory } from './typechain';
@@ -15,7 +15,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { EventTypes } from './types';
 
 @Injectable()
-export class V2FactoryService extends BaseFactoryContractService {
+export class V2FactoryService extends BaseFactoryContractService implements OnModuleInit {
   constructor(
     @Inject(CONNECTION_INFO) connectionInfo: ChainConnectionInfo[],
     cacheService: CacheService,
@@ -28,6 +28,10 @@ export class V2FactoryService extends BaseFactoryContractService {
     private readonly eventEmitter: EventEmitter2,
   ) {
     super(connectionInfo, cacheService, indexerEventStatusRepository, statisticsRepository);
+  }
+
+  async onModuleInit() {
+    await this.waitFor(10000); // Wait for 10 seconds
     this.initializeContracts();
     this.initializeStartBlocks();
   }
@@ -46,21 +50,55 @@ export class V2FactoryService extends BaseFactoryContractService {
     };
   }
 
-  private getContract(chainId: number, provider: JsonRpcProvider): Factory {
+  private getV2FactoryContract(chainId: number, provider: JsonRpcProvider): Factory {
     const contractAddress = this.CONTRACT_ADDRESSES[chainId];
     return Factory__factory.connect(contractAddress, provider);
   }
 
   async handlePoolCreated(chainId: number) {
+    this.logger.log(`⚙️  Sequencing → Pool Creation Event [Chain: ${chainId}, Factory: V2Factory]`);
+    if (!this.cacheService.isConnected()) {
+      await this.waitFor(2000);
+      return;
+    }
     await this.haltUntilOpen(chainId); // If resource is locked, halt at this point
 
-    const lastBlockNumber = await this.getLatestBlockNumber(chainId);
+    let lastBlockNumber: number | undefined;
+
+    try {
+      this.logger.log(`🔍 Fetching latest block number on chain ${chainId} (V2Factory)`);
+      lastBlockNumber = await this.getLatestBlockNumber(chainId);
+    } catch (error: any) {
+      // Release resource
+      await this.releaseResource(chainId);
+      this.logger.error(
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        `Unable to fetch latest block: ${error.message}`,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        error.stack,
+        V2FactoryService.name,
+      );
+    }
+
+    if (typeof lastBlockNumber === 'undefined') return;
 
     const indexerEventStatus = await this.getIndexerEventStatus('PoolCreated', chainId);
+
+    // We want to keep record in sync with chain
+    if (indexerEventStatus.lastBlockNumber >= lastBlockNumber) {
+      this.logger.debug(
+        `Indexer status check with ID ${indexerEventStatus.id} is up to date with current block. Skipping...`,
+        V2FactoryService.name,
+      );
+      // Release resource
+      await this.releaseResource(chainId);
+      return;
+    }
+
     const connectionInfo = this.getConnectionInfo(chainId);
     const promises = connectionInfo.rpcInfos.map((rpcInfo) => {
       const provider = this.provider(rpcInfo, chainId);
-      const contract = this.getContract(chainId, provider);
+      const contract = this.getV2FactoryContract(chainId, provider);
       const blockStart = lastBlockNumber
         ? Math.min(indexerEventStatus.lastBlockNumber + 1, lastBlockNumber)
         : indexerEventStatus.lastBlockNumber + 1;
@@ -73,108 +111,115 @@ export class V2FactoryService extends BaseFactoryContractService {
 
     // Wait for 3 secs
     await this.waitFor(3000);
-    const eventData = await Promise.any(promises);
+    try {
+      const eventData = await Promise.any(promises);
 
-    for (const eventDatum of eventData) {
-      const processedBlock = await eventDatum.getBlock();
-      const { pool, token0, token1, stable } = eventDatum.args;
+      for (const eventDatum of eventData) {
+        const processedBlock = await eventDatum.getBlock();
+        const { pool, token0, token1, stable } = eventDatum.args;
 
-      const token0Id = `${token0.toLowerCase()}-${chainId}`;
-      const token1Id = `${token1.toLowerCase()}-${chainId}`;
+        const token0Id = `${token0.toLowerCase()}-${chainId}`;
+        const token1Id = `${token1.toLowerCase()}-${chainId}`;
 
-      // Find tokens
-      let token0Entity = await this.tokenRepository.findOneBy({ id: token0Id });
-      let token1Entity = await this.tokenRepository.findOneBy({ id: token1Id });
+        // Find tokens
+        let token0Entity = await this.tokenRepository.findOneBy({ id: token0Id });
+        let token1Entity = await this.tokenRepository.findOneBy({ id: token1Id });
 
-      if (token0Entity === null) {
-        const { name, symbol, decimals } = await this.getERC20Metadata(token0, chainId);
-        token0Entity = this.tokenRepository.create({
-          name,
-          symbol,
-          decimals,
-          address: token0,
+        if (token0Entity === null) {
+          const { name, symbol, decimals } = await this.getERC20Metadata(token0, chainId);
+          token0Entity = this.tokenRepository.create({
+            name,
+            symbol,
+            decimals,
+            address: token0,
+            chainId,
+            totalLiquidity: 0,
+            totalLiquidityETH: 0,
+            totalLiquidityUSD: 0,
+            derivedETH: 0,
+            derivedUSD: 0,
+            tradeVolume: 0,
+            tradeVolumeUSD: 0,
+            txCount: 0,
+          });
+          token0Entity = await this.tokenRepository.save(token0Entity);
+        }
+
+        if (token1Entity === null) {
+          const { name, symbol, decimals } = await this.getERC20Metadata(token1, chainId);
+          token1Entity = this.tokenRepository.create({
+            name,
+            symbol,
+            decimals,
+            address: token1,
+            chainId,
+            totalLiquidity: 0,
+            totalLiquidityETH: 0,
+            totalLiquidityUSD: 0,
+            derivedETH: 0,
+            derivedUSD: 0,
+            tradeVolume: 0,
+            tradeVolumeUSD: 0,
+            txCount: 0,
+          });
+          token1Entity = await this.tokenRepository.save(token1Entity);
+        }
+
+        const poolEntity = this.poolRepository.create({
+          address: pool,
+          totalBribesUSD: 0,
           chainId,
-          totalLiquidity: 0,
-          totalLiquidityETH: 0,
-          totalLiquidityUSD: 0,
-          derivedETH: 0,
-          derivedUSD: 0,
-          tradeVolume: 0,
-          tradeVolumeUSD: 0,
+          reserve0: 0,
+          reserve1: 0,
+          reserveETH: 0,
+          reserveUSD: 0,
+          token0: token0Entity,
+          token1: token1Entity,
+          token0Price: 0,
+          token1Price: 0,
+          totalEmissions: 0,
+          totalEmissionsUSD: 0,
+          totalFees0: 0,
+          totalFees1: 0,
+          totalFeesUSD: 0,
+          totalSupply: 0,
+          totalVotes: 0,
           txCount: 0,
+          volumeETH: 0,
+          volumeToken0: 0,
+          volumeToken1: 0,
+          volumeUSD: 0,
+          poolType: stable ? PoolType.STABLE : PoolType.VOLATILE,
+          createdAtTimestamp: processedBlock.timestamp,
+          createdAtBlockNumber: processedBlock.number,
         });
-        token0Entity = await this.tokenRepository.save(token0Entity);
-      }
 
-      if (token1Entity === null) {
-        const { name, symbol, decimals } = await this.getERC20Metadata(token1, chainId);
-        token1Entity = this.tokenRepository.create({
-          name,
-          symbol,
-          decimals,
-          address: token1,
+        // Insert pool
+        await this.poolRepository.save(poolEntity);
+
+        // Update indexer status
+        indexerEventStatus.lastBlockNumber = processedBlock.number;
+
+        // Update stats
+        const statistics = await this.loadStatistics();
+        statistics.totalPairsCreated = statistics.totalPairsCreated + 1;
+
+        await this.statisticsRepository.save(statistics);
+
+        this.updateChainMetric(chainId);
+        this.eventEmitter.emit(EventTypes.V2_POOL_DEPLOYED, {
+          address: pool,
+          block: processedBlock.number,
           chainId,
-          totalLiquidity: 0,
-          totalLiquidityETH: 0,
-          totalLiquidityUSD: 0,
-          derivedETH: 0,
-          derivedUSD: 0,
-          tradeVolume: 0,
-          tradeVolumeUSD: 0,
-          txCount: 0,
         });
-        token1Entity = await this.tokenRepository.save(token1Entity);
       }
-
-      const poolEntity = this.poolRepository.create({
-        address: pool,
-        totalBribesUSD: 0,
-        chainId,
-        reserve0: 0,
-        reserve1: 0,
-        reserveETH: 0,
-        reserveUSD: 0,
-        token0: token0Entity,
-        token1: token1Entity,
-        token0Price: 0,
-        token1Price: 0,
-        totalEmissions: 0,
-        totalEmissionsUSD: 0,
-        totalFees0: 0,
-        totalFees1: 0,
-        totalFeesUSD: 0,
-        totalSupply: 0,
-        totalVotes: 0,
-        txCount: 0,
-        volumeETH: 0,
-        volumeToken0: 0,
-        volumeToken1: 0,
-        volumeUSD: 0,
-        poolType: stable ? PoolType.STABLE : PoolType.VOLATILE,
-        createdAtTimestamp: processedBlock.timestamp,
-        createdAtBlockNumber: processedBlock.number,
-      });
-
-      // Insert pool
-      await this.poolRepository.save(poolEntity);
-
-      // Update indexer status
-      indexerEventStatus.lastBlockNumber = processedBlock.number;
-
-      this.updateChainMetric(chainId);
-      this.eventEmitter.emit(EventTypes.V2_POOL_DEPLOYED, {
-        address: pool,
-        block: processedBlock.number,
-        chainId,
-      });
+    } catch (error: any) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      this.logger.error(error.message, error.stack, V2FactoryService.name);
+      return;
     }
 
     await this.indexerEventStatusRepository.save(indexerEventStatus);
-
-    const statistics = await this.loadStatistics();
-    statistics.totalPairsCreated = statistics.totalPairsCreated + 1;
-
-    await this.statisticsRepository.save(statistics);
     await this.releaseResource(chainId);
   }
 }

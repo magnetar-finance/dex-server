@@ -42,7 +42,7 @@ export abstract class BaseService {
     const connectionInfo = this.connectionsMap.get(chainId);
     if (!connectionInfo) return undefined;
     const promises = connectionInfo.rpcInfos.map((rpcInfo) =>
-      new JsonRpcProvider(rpcInfo.url, chainId).getBlockNumber(),
+      this.provider(rpcInfo, chainId).getBlockNumber(),
     );
     return Promise.any(promises);
   }
@@ -119,7 +119,7 @@ export abstract class BaseService {
     return {
       processedEvents: totalProcessedEvents,
       eventsPerSeconds: Math.floor(totalProcessedEvents / runTimeInSecs),
-      runTimeInMinutes: runTimeInSecs / 60,
+      runTimeInMinutes: Math.fround(runTimeInSecs / 60),
     };
   }
 
@@ -129,7 +129,7 @@ export abstract class BaseService {
     return {
       processedEvents,
       eventsPerSeconds: Math.floor(processedEvents / runTimeInSecs),
-      runTimeInMinutes: runTimeInSecs / 60,
+      runTimeInMinutes: Math.fround(runTimeInSecs / 60),
     };
   }
 
