@@ -63,8 +63,26 @@ export class IndexerService implements OnModuleInit, OnModuleDestroy {
     const clFactoryMetrics = this.clFactoryService.getOverallMetrics();
     const nfpmMetrics = this.nfpmService.getOverallMetrics();
     // Log metrics
-    this.logger.debug(`V2Factory metrics: ${JSON.stringify(v2FactoryMetrics)}`);
-    this.logger.debug(`CLFactory metrics: ${JSON.stringify(clFactoryMetrics)}`);
-    this.logger.debug(`NFPM metrics: ${JSON.stringify(nfpmMetrics)}`);
+
+    // V2Factory
+    this.logger.log(
+      `📊 Metrics (V2Factory) → Processed: ${v2FactoryMetrics.processedEvents} | ` +
+        `Rate: ${v2FactoryMetrics.eventsPerSeconds} evt/s | ` +
+        `Runtime: ${v2FactoryMetrics.runTimeInMinutes.toFixed(2)}m`,
+    );
+
+    // CLFactory
+    this.logger.log(
+      `📊 Metrics (CLFactory) → Processed: ${clFactoryMetrics.processedEvents} | ` +
+        `Rate: ${clFactoryMetrics.eventsPerSeconds} evt/s | ` +
+        `Runtime: ${clFactoryMetrics.runTimeInMinutes.toFixed(2)}m`,
+    );
+
+    // NFPM
+    this.logger.log(
+      `📊 Metrics (NFPM) → Processed: ${nfpmMetrics.processedEvents} | ` +
+        `Rate: ${nfpmMetrics.eventsPerSeconds} evt/s | ` +
+        `Runtime: ${nfpmMetrics.runTimeInMinutes.toFixed(2)}m`,
+    );
   }
 }

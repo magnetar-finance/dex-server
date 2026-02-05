@@ -56,7 +56,7 @@ export class V2FactoryService extends BaseFactoryContractService implements OnMo
   }
 
   async handlePoolCreated(chainId: number) {
-    this.logger.log(`Now sequencing pool creation event on ${chainId}`, V2FactoryService.name);
+    this.logger.log(`⚙️  Sequencing → Pool Creation Event [Chain: ${chainId}, Factory: V2Factory]`);
     if (!this.cacheService.isConnected()) {
       await this.waitFor(2000);
       return;
@@ -66,7 +66,7 @@ export class V2FactoryService extends BaseFactoryContractService implements OnMo
     let lastBlockNumber: number | undefined;
 
     try {
-      this.logger.log(`Now fetching latest block number on ${chainId}`, V2FactoryService.name);
+      this.logger.log(`🔍 Fetching latest block number on chain ${chainId} (V2Factory)`);
       lastBlockNumber = await this.getLatestBlockNumber(chainId);
     } catch (error: any) {
       // Release resource

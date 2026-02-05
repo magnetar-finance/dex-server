@@ -55,7 +55,7 @@ export class CLFactoryService extends BaseFactoryContractService implements OnMo
   }
 
   async handlePoolCreated(chainId: number) {
-    this.logger.log(`Now sequencing pool creation event on ${chainId}`, CLFactoryService.name);
+    this.logger.log(`⚙️  Sequencing → Pool Creation Event [Chain: ${chainId}, Factory: CLFactory]`);
     if (!this.cacheService.isConnected()) {
       await this.waitFor(2000);
       return;
@@ -65,7 +65,7 @@ export class CLFactoryService extends BaseFactoryContractService implements OnMo
     let lastBlockNumber: number | undefined;
 
     try {
-      this.logger.log(`Now fetching latest block number on ${chainId}`, CLFactoryService.name);
+      this.logger.log(`🔍 Fetching latest block number on chain ${chainId} (CLFactory)`);
       lastBlockNumber = await this.getLatestBlockNumber(chainId);
     } catch (error: any) {
       // Release resource

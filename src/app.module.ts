@@ -13,6 +13,9 @@ import { IndexerService } from './modules/indexer/indexer.service';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import appConfig from './config/app.config';
 import { ScheduleModule } from '@nestjs/schedule';
+import { APP_PIPE } from '@nestjs/core';
+import { ValidationPipe } from './pipes/validation.pipe';
+import { PoolsModule } from './modules/api/pools/pools.module';
 
 @Module({
   imports: [
@@ -35,8 +38,9 @@ import { ScheduleModule } from '@nestjs/schedule';
     }),
     BlockchainModule.forRoot(loadChainInfo()),
     DatabaseModule,
+    PoolsModule,
   ],
   controllers: [AppController],
-  providers: [AppService, IndexerService],
+  providers: [AppService, IndexerService, { provide: APP_PIPE, useClass: ValidationPipe }],
 })
 export class AppModule {}
