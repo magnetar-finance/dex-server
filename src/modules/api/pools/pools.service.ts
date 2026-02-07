@@ -142,6 +142,14 @@ export class PoolsService {
     if (!endHour) endHour = new Date();
     if (!startHour) startHour = new Date(endHour.getTime() - 3600000); // 1 hour ago
 
+    if (endHour < startHour) {
+      const eh = endHour;
+      const sh = startHour;
+
+      startHour = eh;
+      endHour = sh;
+    }
+
     const startHourUnix = Math.floor(startHour.getTime() / 1000);
     const endHourUnix = Math.floor(endHour.getTime() / 1000);
 
@@ -156,6 +164,14 @@ export class PoolsService {
   getPoolDailyVolumeChange(poolIdOrAddress: string, startHour?: Date, endHour?: Date) {
     if (!endHour) endHour = new Date();
     if (!startHour) startHour = new Date(endHour.getTime() - 86400000); // 1 day ago
+
+    if (endHour < startHour) {
+      const eh = endHour;
+      const sh = startHour;
+
+      startHour = eh;
+      endHour = sh;
+    }
 
     const startHourUnix = Math.floor(startHour.getTime() / 1000);
     const endHourUnix = Math.floor(endHour.getTime() / 1000);

@@ -85,6 +85,9 @@ export class OverallDayData {
   })
   totalTradeVolumeETH: number;
 
+  @Column('integer', { nullable: false, comment: 'Chain ID' })
+  chainId: number;
+
   @Column('decimal', {
     precision: 500,
     scale: 5,

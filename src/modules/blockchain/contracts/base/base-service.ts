@@ -86,11 +86,13 @@ export abstract class BaseService {
   }
 
   private claimResource(chainId: number) {
+    if (!this.cacheService.isConnected()) return true;
     const resourceKey = `${RESOURCE_LOCK}-${chainId}`;
     return this.cacheService.cache(resourceKey, this.lockId, 30, true);
   }
 
   protected async releaseResource(chainId: number) {
+    if (!this.cacheService.isConnected()) return false;
     const resourceKey = `${RESOURCE_LOCK}-${chainId}`;
     const resourceValue = await this.cacheService.obtain<string>(resourceKey);
 

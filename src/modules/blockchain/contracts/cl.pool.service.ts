@@ -465,7 +465,10 @@ export class CLPoolService
     statistics.txCount = statistics.txCount + 1;
     await this.statisticsRepository.save(statistics);
 
-    const overallDayData = await this.updateOverallDayData(transactionEntity.timestamp);
+    const overallDayData = await this.updateOverallDayData(
+      transactionEntity.timestamp,
+      transactionEntity.chainId,
+    );
     const poolDayData = await this.updatePoolDayData(
       transactionEntity.timestamp,
       poolEntity.address.toLowerCase(),
@@ -577,7 +580,7 @@ export class CLPoolService
     statistics.txCount = statistics.txCount + 1;
     await this.statisticsRepository.save(statistics);
 
-    await this.updateOverallDayData(transactionEntity.timestamp);
+    await this.updateOverallDayData(transactionEntity.timestamp, transactionEntity.chainId);
     await this.updatePoolDayData(transactionEntity.timestamp, poolEntity.address.toLowerCase());
     await this.updatePoolHourData(transactionEntity.timestamp, poolEntity.address.toLowerCase());
     await this.updateTokenDayData(_t0, transactionEntity.timestamp);
@@ -668,7 +671,10 @@ export class CLPoolService
     statistics.txCount = statistics.txCount + 1;
     await this.statisticsRepository.save(statistics);
 
-    const overallDayData = await this.updateOverallDayData(transactionEntity.timestamp);
+    const overallDayData = await this.updateOverallDayData(
+      transactionEntity.timestamp,
+      transactionEntity.chainId,
+    );
     const poolDayData = await this.updatePoolDayData(
       transactionEntity.timestamp,
       poolEntity.address.toLowerCase(),
@@ -731,13 +737,14 @@ export class CLPoolService
     return token;
   }
 
-  private async updateOverallDayData(timestamp: number) {
+  private async updateOverallDayData(timestamp: number, chainId: number) {
     const statistics = await this.loadStatistics();
     const dayId = Math.floor(timestamp / 86400);
+    const dataId = `${dayId.toString()}-${chainId}`;
     const dayStartTimestamp = dayId * 86400;
 
     let overallDayData = await this.overallDayDataRepository.findOneBy({
-      id: dayId.toString(),
+      id: dataId,
     });
     if (overallDayData === null) {
       overallDayData = this.overallDayDataRepository.create({
@@ -751,6 +758,7 @@ export class CLPoolService
         liquidityUSD: 0,
         totalTradeVolumeETH: 0,
         totalTradeVolumeUSD: 0,
+        chainId,
       });
 
       overallDayData = await this.overallDayDataRepository.save(overallDayData);

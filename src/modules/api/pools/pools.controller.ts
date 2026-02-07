@@ -2,7 +2,9 @@ import { Controller, Get, HttpCode, HttpStatus, Param, Query } from '@nestjs/com
 import { PoolsQuerySchema, PoolsVolumeChangeQuerySchema } from './pools.schema';
 import { PoolsService } from './pools.service';
 import { SharedQuerySchema } from '../shared/schema';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('Pools')
 @Controller('pools')
 export class PoolsController {
   constructor(private readonly poolsService: PoolsService) {}
