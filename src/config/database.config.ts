@@ -15,8 +15,8 @@ export function getPostgresConfigFactory(configService: ConfigService): TypeOrmM
     namingStrategy: new SnakeNamingStrategy(),
     type: 'postgres',
     ssl: {
-      rejectUnauthorized: false,
-      ca: configService.get<string>('postgres.ca', ''),
+      rejectUnauthorized: true,
+      ca: configService.get<string>('postgres.ca', '').replace(/\\n/g, '\n'),
     },
   };
 }

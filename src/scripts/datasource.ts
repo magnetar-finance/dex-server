@@ -46,10 +46,13 @@ const ds = new DataSource({
   migrationsRun: false,
   migrations: [path.join(__dirname, './migrations/*.{ts,js}')],
   namingStrategy: new SnakeNamingStrategy(),
-  ssl: {
-    rejectUnauthorized: false,
-    ca: process.env.CA_DB,
-  },
+  ssl:
+    process.env.NODE_ENV === 'production'
+      ? {
+          rejectUnauthorized: true,
+          ca: process.env.CA_DB?.replace(/\\n/g, '\n'),
+        }
+      : false,
 });
 
 export default ds;
