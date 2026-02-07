@@ -20,7 +20,8 @@
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "generate-contract-types": "typechain --target ethers-v6 --out-dir ./src/modules/blockchain/contracts/typechain '**/**abis/*.json'",
     "migrations:generate": "npx typeorm-ts-node-commonjs migration:generate -d ./src/scripts/datasource.ts ./src/scripts/migrations/base",
-    "migrations:execute": "npx typeorm-ts-node-commonjs migration:run -d ./src/scripts/datasource.ts"
+    "migrations:execute": "npx typeorm-ts-node-commonjs migration:run -d ./src/scripts/datasource.ts",
+    "migrations:execute:prod": "npx typeorm migration:run -d ./dist/scripts/datasource.js"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
