@@ -19,6 +19,7 @@ import { Token } from '../modules/database/entities/token.entity';
 import { User } from '../modules/database/entities/user.entity';
 import { Transaction } from '../modules/database/entities/transaction.entity';
 import { DataSource } from 'typeorm';
+import 'dotenv/config';
 
 const ds = new DataSource({
   url: process.env.POSTGRES_URI || DEFAULT_POSTGRES_URI,
@@ -45,6 +46,10 @@ const ds = new DataSource({
   migrationsRun: false,
   migrations: [path.join(__dirname, './migrations/*.{ts,js}')],
   namingStrategy: new SnakeNamingStrategy(),
+  ssl: {
+    rejectUnauthorized: true,
+    ca: process.env.CA_DB,
+  },
 });
 
 export default ds;
