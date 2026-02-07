@@ -44,8 +44,8 @@ export class CLFactoryService extends BaseFactoryContractService implements OnMo
 
   private initializeStartBlocks() {
     this.START_BLOCKS = {
-      [ChainIds.DUSK_TESTNET]: 1308356,
-      [ChainIds.PHAROS_TESTNET]: 10490769,
+      [ChainIds.DUSK_TESTNET]: 1978744,
+      [ChainIds.PHAROS_TESTNET]: 12893738,
     };
   }
 
