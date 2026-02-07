@@ -180,10 +180,9 @@ export class V2PoolService
       const blockStart = lastBlockNumber
         ? Math.min(indexerEventStatus.lastBlockNumber + 1, lastBlockNumber)
         : indexerEventStatus.lastBlockNumber + 1;
-      const blockEnd = blockStart + (rpcInfo.queryBlockRange || DEFAULT_BLOCK_RANGE);
-      indexerEventStatus.lastBlockNumber = lastBlockNumber
-        ? Math.min(blockEnd, lastBlockNumber)
-        : blockEnd; // We still want to update last processed block even if no data is available.
+      let blockEnd = blockStart + (rpcInfo.queryBlockRange || DEFAULT_BLOCK_RANGE);
+      blockEnd = Math.min(lastBlockNumber, blockEnd);
+      indexerEventStatus.lastBlockNumber = blockEnd;
       return contract.queryFilter(contract.filters.Mint, blockStart, blockEnd);
     });
 
@@ -276,10 +275,9 @@ export class V2PoolService
       const blockStart = lastBlockNumber
         ? Math.min(indexerEventStatus.lastBlockNumber + 1, lastBlockNumber)
         : indexerEventStatus.lastBlockNumber + 1;
-      const blockEnd = blockStart + (rpcInfo.queryBlockRange || DEFAULT_BLOCK_RANGE);
-      indexerEventStatus.lastBlockNumber = lastBlockNumber
-        ? Math.min(blockEnd, lastBlockNumber)
-        : blockEnd; // We still want to update last processed block even if no data is available.
+      let blockEnd = blockStart + (rpcInfo.queryBlockRange || DEFAULT_BLOCK_RANGE);
+      blockEnd = Math.min(lastBlockNumber, blockEnd);
+      indexerEventStatus.lastBlockNumber = blockEnd;
       return contract.queryFilter(contract.filters.Burn, blockStart, blockEnd);
     });
 
@@ -371,10 +369,9 @@ export class V2PoolService
       const blockStart = lastBlockNumber
         ? Math.min(indexerEventStatus.lastBlockNumber + 1, lastBlockNumber)
         : indexerEventStatus.lastBlockNumber + 1;
-      const blockEnd = blockStart + (rpcInfo.queryBlockRange || DEFAULT_BLOCK_RANGE);
-      indexerEventStatus.lastBlockNumber = lastBlockNumber
-        ? Math.min(blockEnd, lastBlockNumber)
-        : blockEnd; // We still want to update last processed block even if no data is available.
+      let blockEnd = blockStart + (rpcInfo.queryBlockRange || DEFAULT_BLOCK_RANGE);
+      blockEnd = Math.min(lastBlockNumber, blockEnd);
+      indexerEventStatus.lastBlockNumber = blockEnd;
       return contract.queryFilter(contract.filters.Transfer, blockStart, blockEnd);
     });
 
@@ -469,10 +466,9 @@ export class V2PoolService
       const blockStart = lastBlockNumber
         ? Math.min(indexerEventStatus.lastBlockNumber + 1, lastBlockNumber)
         : indexerEventStatus.lastBlockNumber + 1;
-      const blockEnd = blockStart + (rpcInfo.queryBlockRange || DEFAULT_BLOCK_RANGE);
-      indexerEventStatus.lastBlockNumber = lastBlockNumber
-        ? Math.min(blockEnd, lastBlockNumber)
-        : blockEnd; // We still want to update last processed block even if no data is available.
+      let blockEnd = blockStart + (rpcInfo.queryBlockRange || DEFAULT_BLOCK_RANGE);
+      blockEnd = Math.min(lastBlockNumber, blockEnd);
+      indexerEventStatus.lastBlockNumber = blockEnd;
       return contract.queryFilter(contract.filters.Swap, blockStart, blockEnd);
     });
 
@@ -569,10 +565,9 @@ export class V2PoolService
       const blockStart = lastBlockNumber
         ? Math.min(indexerEventStatus.lastBlockNumber + 1, lastBlockNumber)
         : indexerEventStatus.lastBlockNumber + 1;
-      const blockEnd = blockStart + (rpcInfo.queryBlockRange || DEFAULT_BLOCK_RANGE);
-      indexerEventStatus.lastBlockNumber = lastBlockNumber
-        ? Math.min(blockEnd, lastBlockNumber)
-        : blockEnd; // We still want to update last processed block even if no data is available.
+      let blockEnd = blockStart + (rpcInfo.queryBlockRange || DEFAULT_BLOCK_RANGE);
+      blockEnd = Math.min(lastBlockNumber, blockEnd);
+      indexerEventStatus.lastBlockNumber = blockEnd;
       return contract.queryFilter(contract.filters.Sync, blockStart, blockEnd);
     });
 
