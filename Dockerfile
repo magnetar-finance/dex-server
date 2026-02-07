@@ -3,7 +3,7 @@ WORKDIR /app
 COPY src src/
 COPY *.json .
 RUN npm install
-RUN npm run build
+RUN npm run generate-contract-types && npm run build
 
 FROM node:20-alpine
 COPY --from=buildStage dist dist/
