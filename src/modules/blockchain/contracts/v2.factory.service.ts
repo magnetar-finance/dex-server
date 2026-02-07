@@ -45,8 +45,8 @@ export class V2FactoryService extends BaseFactoryContractService implements OnMo
 
   private initializeStartBlocks() {
     this.START_BLOCKS = {
-      [ChainIds.DUSK_TESTNET]: 1978744,
-      [ChainIds.PHAROS_TESTNET]: 12893738,
+      [ChainIds.DUSK_TESTNET]: 1994510,
+      [ChainIds.PHAROS_TESTNET]: 12927389,
     };
   }
 
