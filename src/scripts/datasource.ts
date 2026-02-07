@@ -47,7 +47,7 @@ const ds = new DataSource({
   migrations: [path.join(__dirname, './migrations/*.{ts,js}')],
   namingStrategy: new SnakeNamingStrategy(),
   ssl: {
-    rejectUnauthorized: true,
+    rejectUnauthorized: false,
     ca: process.env.CA_DB,
   },
 });
