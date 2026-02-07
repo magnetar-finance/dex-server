@@ -5,8 +5,6 @@ import { SnakeNamingStrategy } from 'typeorm-naming-strategies';
 
 export const loadPostgresConfig = registerAs('postgres', () => ({
   uri: process.env.POSTGRES_URI || DEFAULT_POSTGRES_URI,
-  ca: process.env.CA_DB,
-  isRender: process.env.CLOUD_PLATFORM === 'render',
 }));
 
 export function getPostgresConfigFactory(configService: ConfigService): TypeOrmModuleOptions {
@@ -15,11 +13,6 @@ export function getPostgresConfigFactory(configService: ConfigService): TypeOrmM
     autoLoadEntities: true,
     namingStrategy: new SnakeNamingStrategy(),
     type: 'postgres',
-    ssl: configService.get<boolean>('postgres.isRender', false)
-      ? {
-          rejectUnauthorized: false,
-          // ca: configService.get<string>('postgres.ca', '').replace(/\\n/g, '\n'),
-        }
-      : false,
+    ssl: false,
   };
 }
