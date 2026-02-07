@@ -13,9 +13,14 @@ import { IndexerService } from './modules/indexer/indexer.service';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import appConfig from './config/app.config';
 import { ScheduleModule } from '@nestjs/schedule';
-import { APP_PIPE } from '@nestjs/core';
+import { APP_FILTER, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
 import { ValidationPipe } from './pipes/validation.pipe';
 import { PoolsModule } from './modules/api/pools/pools.module';
+import { PositionsModule } from './modules/api/positions/positions.module';
+import { GeneralAnalyticsModule } from './modules/api/general-analytics/general-analytics.module';
+import { TransformService } from './interceptors/transform.interceptor';
+import { ExceptionHandler } from './filters/exception.filter';
+import { LoggingService } from './interceptors/logging.interceptor';
 
 @Module({
   imports: [
@@ -39,8 +44,17 @@ import { PoolsModule } from './modules/api/pools/pools.module';
     BlockchainModule.forRoot(loadChainInfo()),
     DatabaseModule,
     PoolsModule,
+    PositionsModule,
+    GeneralAnalyticsModule,
   ],
   controllers: [AppController],
-  providers: [AppService, IndexerService, { provide: APP_PIPE, useClass: ValidationPipe }],
+  providers: [
+    AppService,
+    IndexerService,
+    { provide: APP_PIPE, useClass: ValidationPipe },
+    { provide: APP_INTERCEPTOR, useClass: TransformService },
+    { provide: APP_INTERCEPTOR, useClass: LoggingService },
+    { provide: APP_FILTER, useClass: ExceptionHandler },
+  ],
 })
 export class AppModule {}
