@@ -21,6 +21,7 @@ import { GeneralAnalyticsModule } from './modules/api/general-analytics/general-
 import { TransformService } from './interceptors/transform.interceptor';
 import { ExceptionHandler } from './filters/exception.filter';
 import { LoggingService } from './interceptors/logging.interceptor';
+import { TokensModule } from './modules/api/tokens/tokens.module';
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { LoggingService } from './interceptors/logging.interceptor';
     PoolsModule,
     PositionsModule,
     GeneralAnalyticsModule,
+    TokensModule,
   ],
   controllers: [AppController],
   providers: [

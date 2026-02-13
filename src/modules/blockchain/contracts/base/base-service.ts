@@ -135,8 +135,8 @@ export abstract class BaseService {
     };
   }
 
-  protected async loadStatistics() {
-    let statistics = await this.statisticsRepository.findOneBy({ id: 1 });
+  protected async loadStatistics(chainId: number) {
+    let statistics = await this.statisticsRepository.findOneBy({ id: `1-${chainId}` });
     if (statistics === null) {
       statistics = this.statisticsRepository.create({
         totalBribesUSD: 0,
@@ -147,6 +147,7 @@ export abstract class BaseService {
         totalVolumeLockedETH: 0,
         totalVolumeLockedUSD: 0,
         txCount: 0,
+        chainId,
       });
       statistics = await this.statisticsRepository.save(statistics);
     }

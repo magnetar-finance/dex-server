@@ -3,6 +3,7 @@ import { Transaction } from '../../database/entities/transaction.entity';
 import { Pool } from '../../database/entities/pool.entity';
 import { Token } from '../../database/entities/token.entity';
 import { OverallDayData } from '../../database/entities/overall-day-data.entity';
+import { Statistics } from '../../database/entities/statistics.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { And, LessThanOrEqual, MoreThanOrEqual, Repository } from 'typeorm';
 
@@ -14,6 +15,8 @@ export class GeneralAnalyticsService {
     @InjectRepository(Token) private readonly tokenRepository: Repository<Token>,
     @InjectRepository(OverallDayData)
     private readonly overallDayDataRepository: Repository<OverallDayData>,
+    @InjectRepository(Statistics)
+    private readonly statisticsRepository: Repository<Statistics>,
   ) {}
 
   getTopPools(chainId?: number, limit: number = 20) {
@@ -72,6 +75,12 @@ export class GeneralAnalyticsService {
         chainId,
         date: And(MoreThanOrEqual(startHourUnix), LessThanOrEqual(endHourUnix)),
       },
+    });
+  }
+
+  getStatistics(chainId?: number) {
+    return this.statisticsRepository.findOneBy({
+      id: `$1-${chainId}`,
     });
   }
 }

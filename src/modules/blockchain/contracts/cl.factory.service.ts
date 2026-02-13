@@ -39,6 +39,7 @@ export class CLFactoryService extends BaseFactoryContractService implements OnMo
     this.CONTRACT_ADDRESSES = {
       [ChainIds.DUSK_TESTNET]: '0xf6a6a429a0b9676293Df0E3616A6a33cA673b5C3',
       [ChainIds.PHAROS_TESTNET]: '0xD75411C6A3fEf2278E51EEaa73cdE8352c59eFEd',
+      [ChainIds.SEISMIC_TESTNET]: '0xB15716c7404BceFaDbd211b04F10bCbD9F93f6Dc',
     };
   }
 
@@ -46,6 +47,7 @@ export class CLFactoryService extends BaseFactoryContractService implements OnMo
     this.START_BLOCKS = {
       [ChainIds.DUSK_TESTNET]: 1994510,
       [ChainIds.PHAROS_TESTNET]: 12927389,
+      [ChainIds.SEISMIC_TESTNET]: 10539367,
     };
   }
 
@@ -195,7 +197,7 @@ export class CLFactoryService extends BaseFactoryContractService implements OnMo
         // Insert pool
         await this.poolRepository.save(poolEntity);
 
-        const statistics = await this.loadStatistics();
+        const statistics = await this.loadStatistics(chainId);
         statistics.totalPairsCreated = statistics.totalPairsCreated + 1;
 
         await this.statisticsRepository.save(statistics);

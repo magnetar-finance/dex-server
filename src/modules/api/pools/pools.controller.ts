@@ -2,7 +2,7 @@ import { Controller, Get, HttpCode, HttpStatus, Param, Query } from '@nestjs/com
 import { PoolsQuerySchema, PoolsVolumeChangeQuerySchema } from './pools.schema';
 import { PoolsService } from './pools.service';
 import { SharedQuerySchema } from '../shared/schema';
-import { ApiTags } from '@nestjs/swagger';
+import { ApiQuery, ApiTags, OmitType } from '@nestjs/swagger';
 
 @ApiTags('Pools')
 @Controller('pools')
@@ -23,6 +23,7 @@ export class PoolsController {
 
   @Get(':poolIdOrAddress/transactions/all')
   @HttpCode(HttpStatus.OK)
+  @ApiQuery({ type: OmitType(SharedQuerySchema, ['chainId'] as const) })
   getPoolTransactions(
     @Param('poolIdOrAddress') poolIdOrAddress: string,
     @Query() query: Omit<SharedQuerySchema, 'chainId'>,
@@ -32,6 +33,7 @@ export class PoolsController {
 
   @Get(':poolIdOrAddress/transactions/swaps')
   @HttpCode(HttpStatus.OK)
+  @ApiQuery({ type: OmitType(SharedQuerySchema, ['chainId'] as const) })
   getPoolSwaps(
     @Param('poolIdOrAddress') poolIdOrAddress: string,
     @Query() query: Omit<SharedQuerySchema, 'chainId'>,
@@ -41,6 +43,7 @@ export class PoolsController {
 
   @Get(':poolIdOrAddress/transactions/burns')
   @HttpCode(HttpStatus.OK)
+  @ApiQuery({ type: OmitType(SharedQuerySchema, ['chainId'] as const) })
   getPoolBurns(
     @Param('poolIdOrAddress') poolIdOrAddress: string,
     @Query() query: Omit<SharedQuerySchema, 'chainId'>,
@@ -50,6 +53,7 @@ export class PoolsController {
 
   @Get(':poolIdOrAddress/transactions/mints')
   @HttpCode(HttpStatus.OK)
+  @ApiQuery({ type: OmitType(SharedQuerySchema, ['chainId'] as const) })
   getPoolMints(
     @Param('poolIdOrAddress') poolIdOrAddress: string,
     @Query() query: Omit<SharedQuerySchema, 'chainId'>,

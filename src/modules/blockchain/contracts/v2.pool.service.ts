@@ -587,7 +587,7 @@ export class V2PoolService
       const token0 = await this.loadTokenPrice(poolEntity.token0);
       const token1 = await this.loadTokenPrice(poolEntity.token1);
 
-      const statistics = await this.loadStatistics();
+      const statistics = await this.loadStatistics(chainId);
       statistics.totalVolumeLockedETH = statistics.totalVolumeLockedETH - poolEntity.reserveETH;
 
       token0.totalLiquidity = token0.totalLiquidity - poolEntity.reserve0;
@@ -779,7 +779,7 @@ export class V2PoolService
     ]);
 
     // Update data
-    const statistics = await this.loadStatistics();
+    const statistics = await this.loadStatistics(transactionEntity.chainId);
     statistics.txCount = statistics.txCount + 1;
     await this.statisticsRepository.save(statistics);
 
@@ -898,7 +898,7 @@ export class V2PoolService
     ]);
 
     // Update data
-    const statistics = await this.loadStatistics();
+    const statistics = await this.loadStatistics(transactionEntity.chainId);
     statistics.txCount = statistics.txCount + 1;
     await this.statisticsRepository.save(statistics);
 
@@ -986,7 +986,7 @@ export class V2PoolService
     token1 = await this.tokenRepository.save(token1);
 
     // Update data
-    const statistics = await this.loadStatistics();
+    const statistics = await this.loadStatistics(transactionEntity.chainId);
     statistics.totalTradeVolumeETH = statistics.totalTradeVolumeETH + amount0ETH + amount1ETH;
     statistics.totalTradeVolumeUSD = statistics.totalTradeVolumeUSD + amount0USD + amount1USD;
     statistics.txCount = statistics.txCount + 1;
@@ -1100,7 +1100,7 @@ export class V2PoolService
   }
 
   private async updateOverallDayData(timestamp: number, chainId: number) {
-    const statistics = await this.loadStatistics();
+    const statistics = await this.loadStatistics(chainId);
     const dayId = Math.floor(timestamp / 86400);
     const dataId = `${dayId.toString()}-${chainId}`;
     const dayStartTimestamp = dayId * 86400;

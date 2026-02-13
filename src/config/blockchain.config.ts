@@ -25,6 +25,15 @@ function loadChainInfo(): ChainConnectionInfo[] {
       ],
       chainId: ChainIds.PHAROS_TESTNET,
     },
+    {
+      rpcInfos: [
+        {
+          url: 'https://gcp-2.seismictest.net/rpc',
+          queryBlockRange: 100,
+        },
+      ],
+      chainId: ChainIds.SEISMIC_TESTNET,
+    },
   ];
 }
 
