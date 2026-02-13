@@ -10,7 +10,7 @@ export class GeneralAnalyticsController {
 
   @Get()
   @HttpCode(HttpStatus.OK)
-  @ApiQuery({ type: OmitType(SharedQuerySchema, ['page'] as const) })
+  @ApiQuery({ type: OmitType(SharedQuerySchema, ['page', 'limit'] as const) })
   getStatistics(@Query() query: Omit<SharedQuerySchema, 'page' | 'limit'>) {
     return this.generalAnalyticsService.getStatistics(query.chainId);
   }
