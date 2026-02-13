@@ -8,7 +8,7 @@ import { ApiTags } from '@nestjs/swagger';
 export class PositionsController {
   constructor(private readonly positionsService: PositionsService) {}
 
-  @Get('positions/:userAccount')
+  @Get(':userAccount')
   @HttpCode(HttpStatus.OK)
   getLiquidityPositions(@Param('userAccount') account: string, @Query() query: SharedQuerySchema) {
     return this.positionsService.getLiquidityPositions(
