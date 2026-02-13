@@ -40,6 +40,7 @@ export class V2FactoryService extends BaseFactoryContractService implements OnMo
     this.CONTRACT_ADDRESSES = {
       [ChainIds.DUSK_TESTNET]: '0xE41d241720FEE7cD6BDfA9aB3204d23687703CD5',
       [ChainIds.PHAROS_TESTNET]: '0x68D81F61b88c2622A590719f956f5Dc253a1dC3d',
+      [ChainIds.SEISMIC_TESTNET]: '0xf00EB8c6877d18B97C47013AfAc2049584c91bDb',
     };
   }
 
@@ -47,6 +48,7 @@ export class V2FactoryService extends BaseFactoryContractService implements OnMo
     this.START_BLOCKS = {
       [ChainIds.DUSK_TESTNET]: 1994510,
       [ChainIds.PHAROS_TESTNET]: 12927389,
+      [ChainIds.SEISMIC_TESTNET]: 10339657,
     };
   }
 
@@ -200,7 +202,7 @@ export class V2FactoryService extends BaseFactoryContractService implements OnMo
         indexerEventStatus.lastBlockNumber = processedBlock.number;
 
         // Update stats
-        const statistics = await this.loadStatistics();
+        const statistics = await this.loadStatistics(chainId);
         statistics.totalPairsCreated = statistics.totalPairsCreated + 1;
 
         await this.statisticsRepository.save(statistics);

@@ -1,6 +1,7 @@
 export enum ChainIds {
   DUSK_TESTNET = 745,
   PHAROS_TESTNET = 688689,
+  SEISMIC_TESTNET = 5124,
 }
 
 export const DEFAULT_BLOCK_RANGE = 10;

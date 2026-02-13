@@ -8,10 +8,10 @@ import {
   VersionColumn,
 } from 'typeorm';
 
-@Entity('statistics')
+@Entity('stats')
 export class Statistics {
   @PrimaryColumn()
-  id: number;
+  id: string;
 
   @Column('bigint', {
     transformer: {
@@ -89,6 +89,9 @@ export class Statistics {
   })
   totalTradeVolumeETH: number;
 
+  @Column('integer', { nullable: false, comment: 'Chain ID' })
+  chainId: number;
+
   @VersionColumn()
   version: number;
 
@@ -100,6 +103,6 @@ export class Statistics {
 
   @BeforeInsert()
   oneRowGuard() {
-    this.id = 1;
+    this.id = `1-${this.chainId}`;
   }
 }

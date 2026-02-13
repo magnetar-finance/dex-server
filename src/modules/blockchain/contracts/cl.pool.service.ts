@@ -458,7 +458,7 @@ export class CLPoolService
     ]);
 
     // Update data
-    const statistics = await this.loadStatistics();
+    const statistics = await this.loadStatistics(chainId);
     statistics.txCount = statistics.txCount + 1;
     await this.statisticsRepository.save(statistics);
 
@@ -573,7 +573,7 @@ export class CLPoolService
     ]);
 
     // Update data
-    const statistics = await this.loadStatistics();
+    const statistics = await this.loadStatistics(chainId);
     statistics.txCount = statistics.txCount + 1;
     await this.statisticsRepository.save(statistics);
 
@@ -662,7 +662,7 @@ export class CLPoolService
     token1 = await this.tokenRepository.save(token1);
 
     // Update data
-    const statistics = await this.loadStatistics();
+    const statistics = await this.loadStatistics(chainId);
     statistics.totalTradeVolumeETH = statistics.totalTradeVolumeETH + amount0ETH + amount1ETH;
     statistics.totalTradeVolumeUSD = statistics.totalTradeVolumeUSD + amount0USD + amount1USD;
     statistics.txCount = statistics.txCount + 1;
@@ -735,7 +735,7 @@ export class CLPoolService
   }
 
   private async updateOverallDayData(timestamp: number, chainId: number) {
-    const statistics = await this.loadStatistics();
+    const statistics = await this.loadStatistics(chainId);
     const dayId = Math.floor(timestamp / 86400);
     const dataId = `${dayId.toString()}-${chainId}`;
     const dayStartTimestamp = dayId * 86400;

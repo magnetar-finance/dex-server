@@ -64,6 +64,7 @@ export class NFPMContractService
     this.CONTRACT_ADDRESSES = {
       [ChainIds.DUSK_TESTNET]: '0x8948f9d59203F9dCF4de4B2baa10887993274C3C',
       [ChainIds.PHAROS_TESTNET]: '0xa45328cB9B5215cc18937AB123fCf44a6815b6C1',
+      [ChainIds.SEISMIC_TESTNET]: '0x023AF3A2F01982A07c80BDe582E48b4B9b491034',
     };
   }
 
@@ -71,6 +72,7 @@ export class NFPMContractService
     this.START_BLOCKS = {
       [ChainIds.DUSK_TESTNET]: 1994510,
       [ChainIds.PHAROS_TESTNET]: 12927389,
+      [ChainIds.SEISMIC_TESTNET]: 10350091,
     };
   }
 
