@@ -9,7 +9,11 @@ import { CacheService } from '../cache/cache.service';
 @Injectable()
 export class IndexerService implements OnModuleInit, OnModuleDestroy {
   private sequenceEv: boolean;
-  private supportedChains = [ChainIds.DUSK_TESTNET, ChainIds.PHAROS_TESTNET];
+  private supportedChains = [
+    ChainIds.DUSK_TESTNET,
+    ChainIds.PHAROS_TESTNET,
+    ChainIds.SEISMIC_TESTNET,
+  ];
 
   private logger = new Logger(IndexerService.name);
 
