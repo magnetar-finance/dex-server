@@ -26,6 +26,7 @@ export class OracleService implements OnModuleInit {
     this.CONTRACT_ADDRESSES = {
       [ChainIds.DUSK_TESTNET]: '0x1Ec4cE240CAb13dd15d144284a93dc8DeD99F41d',
       [ChainIds.PHAROS_TESTNET]: '0xd03a9BE3d61C5d287dA7b23bd7641A6489d0FDd8',
+      [ChainIds.SEISMIC_TESTNET]: '0x6202Fc26DF15bb3010df625e8874E8B55C42b46f',
     };
   }
 
