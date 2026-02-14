@@ -24,7 +24,7 @@ export class OracleService implements OnModuleInit {
 
   private initializeContracts() {
     this.CONTRACT_ADDRESSES = {
-      [ChainIds.DUSK_TESTNET]: '0x1Ec4cE240CAb13dd15d144284a93dc8DeD99F41d',
+      [ChainIds.DUSK_TESTNET]: '0xb33B33B1c457a4E26e3Bb2391cE07a73B73b0d22',
       [ChainIds.PHAROS_TESTNET]: '0xd03a9BE3d61C5d287dA7b23bd7641A6489d0FDd8',
       [ChainIds.SEISMIC_TESTNET]: '0x6202Fc26DF15bb3010df625e8874E8B55C42b46f',
     };
