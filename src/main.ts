@@ -29,6 +29,10 @@ async function bootstrap() {
 
   app.enableShutdownHooks();
   app.setGlobalPrefix('/api');
+  app.enableCors({
+    origin: '*',
+    methods: 'GET',
+  });
 
   setupSwagger(app);
 
