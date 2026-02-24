@@ -165,6 +165,7 @@ export class CLFactoryService extends BaseFactoryContractService implements OnMo
         }
 
         const poolEntity = this.poolRepository.create({
+          name: `CL-${token0Entity.symbol}/${token1Entity.symbol}`,
           address: pool,
           totalBribesUSD: 0,
           chainId,

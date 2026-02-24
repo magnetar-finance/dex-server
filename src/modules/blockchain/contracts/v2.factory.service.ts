@@ -166,8 +166,11 @@ export class V2FactoryService extends BaseFactoryContractService implements OnMo
           token1Entity = await this.tokenRepository.save(token1Entity);
         }
 
+        const { name } = await this.getERC20Metadata(pool, chainId);
+
         const poolEntity = this.poolRepository.create({
           address: pool,
+          name,
           totalBribesUSD: 0,
           chainId,
           reserve0: 0,
