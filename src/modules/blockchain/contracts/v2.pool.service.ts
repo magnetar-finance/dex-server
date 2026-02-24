@@ -33,29 +33,29 @@ interface IResolvableTransaction {
 }
 
 interface IResolvableMintTransaction extends IResolvableTransaction {
-  amount0: bigint;
-  amount1: bigint;
+  amount0: string;
+  amount1: string;
 }
 
 interface IResolvableBurnTransaction extends IResolvableTransaction {
-  amount0: bigint;
-  amount1: bigint;
+  amount0: string;
+  amount1: string;
 }
 
 interface IResolvableTransferTransaction extends IResolvableTransaction {
   token: string;
   from: string;
   to: string;
-  amount: bigint;
+  amount: string;
 }
 
 interface IResolvableSwapTransaction extends IResolvableTransaction {
   from: string;
   to: string;
-  amount0In: bigint;
-  amount1In: bigint;
-  amount0Out: bigint;
-  amount1Out: bigint;
+  amount0In: string;
+  amount1In: string;
+  amount0Out: string;
+  amount1Out: string;
   token: string;
 }
 
@@ -215,8 +215,8 @@ export class V2PoolService
       // For context, the Transfer event and the Mint event are emitted on the same transaction with the former coming first. The transfer event harbours data that we would need on the mint event table. I imagine that there are hypothetical scenarios where the mint event is processed before the transfer event, but we want to ensure integrity on the mint table, so we cache the result of the procession and do a look-up at a latter time against a cache for the transfer event
       const resolvableMint: IResolvableMintTransaction = {
         sender,
-        amount0,
-        amount1,
+        amount0: amount0.toString(),
+        amount1: amount1.toString(),
         chainId,
         hash: transactionEntity.hash,
         logIndex: eventDatum.index,
@@ -310,8 +310,8 @@ export class V2PoolService
       // For context, the Transfer event and the Mint event are emitted on the same transaction with the former coming first. The transfer event harbours data that we would need on the mint event table. I imagine that there are hypothetical scenarios where the mint event is processed before the transfer event, but we want to ensure integrity on the mint table, so we cache the result of the procession and do a look-up at a latter time against a cache for the transfer event
       const resolvableBurn: IResolvableBurnTransaction = {
         sender,
-        amount0,
-        amount1,
+        amount0: amount0.toString(),
+        amount1: amount1.toString(),
         chainId,
         hash: transactionEntity.hash,
         logIndex: eventDatum.index,
@@ -409,7 +409,7 @@ export class V2PoolService
         token: address.toLowerCase(),
         chainId,
         hash: transactionEntity.hash,
-        amount: value,
+        amount: value.toString(),
         logIndex: eventDatum.index,
         sender: transaction.from,
       };
@@ -505,10 +505,10 @@ export class V2PoolService
         token: address.toLowerCase(),
         chainId,
         hash: transactionEntity.hash,
-        amount0In,
-        amount1In,
-        amount0Out,
-        amount1Out,
+        amount0In: amount0In.toString(),
+        amount1In: amount1In.toString(),
+        amount0Out: amount0Out.toString(),
+        amount1Out: amount1Out.toString(),
         logIndex: eventDatum.index,
         sender,
       };
