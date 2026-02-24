@@ -57,27 +57,25 @@ export class CLFactoryService extends BaseFactoryContractService implements OnMo
   }
 
   async handlePoolCreated(chainId: number) {
-    this.logger.log(`⚙️  Sequencing → Pool Creation Event [Chain: ${chainId}, Factory: CLFactory]`);
+    this.logger.log(`[Chain: ${chainId}] Now sequencing pool creation event`);
     if (!this.cacheService.isConnected()) {
       await this.waitFor(2000);
       return;
     }
-    await this.haltUntilOpen(chainId); // If resource is locked, halt at this point
+    await this.haltUntilOpen(chainId);
 
     let lastBlockNumber: number | undefined;
 
     try {
-      this.logger.log(`🔍 Fetching latest block number on chain ${chainId} (CLFactory)`);
+      this.logger.log(`[Chain: ${chainId}] Fetching latest block number`);
       lastBlockNumber = await this.getLatestBlockNumber(chainId);
     } catch (error: any) {
-      // Release resource
       await this.releaseResource(chainId);
       this.logger.error(
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-        `Unable to fetch latest block: ${error.message}`,
+        `[Chain: ${chainId}] Unable to fetch latest block → ${error.message}`,
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         error.stack,
-        CLFactoryService.name,
       );
     }
 
@@ -85,13 +83,8 @@ export class CLFactoryService extends BaseFactoryContractService implements OnMo
 
     const indexerEventStatus = await this.getIndexerEventStatus('PoolCreated', chainId);
 
-    // We want to keep record in sync with chain
     if (indexerEventStatus.lastBlockNumber >= lastBlockNumber) {
-      this.logger.debug(
-        `Indexer status check with ID ${indexerEventStatus.id} is up to date with current block. Skipping...`,
-        CLFactoryService.name,
-      );
-      // Release resource
+      this.logger.log(`[Indexer: ${indexerEventStatus.id}] Already at current block. Skipping...`);
       await this.releaseResource(chainId);
       return;
     }
@@ -108,7 +101,6 @@ export class CLFactoryService extends BaseFactoryContractService implements OnMo
       return contract.queryFilter(contract.filters.PoolCreated, blockStart, blockEnd);
     });
 
-    // Wait for 3 secs
     await this.waitFor(3000);
     try {
       const eventData = await Promise.any(promises);
@@ -120,7 +112,6 @@ export class CLFactoryService extends BaseFactoryContractService implements OnMo
         const token0Id = `${token0.toLowerCase()}-${chainId}`;
         const token1Id = `${token1.toLowerCase()}-${chainId}`;
 
-        // Find tokens
         let token0Entity = await this.tokenRepository.findOneBy({ id: token0Id });
         let token1Entity = await this.tokenRepository.findOneBy({ id: token1Id });
 
@@ -198,7 +189,6 @@ export class CLFactoryService extends BaseFactoryContractService implements OnMo
           tickSpacing: parseInt(tickSpacing.toString()),
         });
 
-        // Insert pool
         await this.poolRepository.save(poolEntity);
 
         const statistics = await this.loadStatistics(chainId);
@@ -206,7 +196,6 @@ export class CLFactoryService extends BaseFactoryContractService implements OnMo
 
         await this.statisticsRepository.save(statistics);
 
-        // Update indexer status
         indexerEventStatus.lastBlockNumber = processedBlock.number;
         this.updateChainMetric(chainId);
         this.eventEmitter.emit(EventTypes.CL_POOL_DEPLOYED, {
@@ -216,13 +205,17 @@ export class CLFactoryService extends BaseFactoryContractService implements OnMo
         });
       }
     } catch (error: any) {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      this.logger.error(error.message, error.stack, CLFactoryService.name);
+      this.logger.error(
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        `[Chain: ${chainId}] Failed to process pool creation events → ${error.message}`,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        error.stack,
+      );
       return;
     }
 
     await this.indexerEventStatusRepository.save(indexerEventStatus);
 
-    await this.releaseResource(chainId); // Release resource
+    await this.releaseResource(chainId);
   }
 }

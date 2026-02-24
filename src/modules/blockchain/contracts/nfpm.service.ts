@@ -82,27 +82,25 @@ export class NFPMContractService
   }
 
   async handleTransfer(chainId: number) {
-    this.logger.log(`Now sequencing transfer event on ${chainId}`, NFPMContractService.name);
+    this.logger.log(`[Chain: ${chainId}] Now sequencing transfer event`);
     if (!this.cacheService.isConnected()) {
       await this.waitFor(2000);
       return;
     }
-    await this.haltUntilOpen(chainId); // If resource is locked, halt at this point
+    await this.haltUntilOpen(chainId);
 
     let lastBlockNumber: number | undefined;
 
     try {
-      this.logger.log(`Now fetching latest block number on ${chainId}`, NFPMContractService.name);
+      this.logger.log(`[Chain: ${chainId}] Fetching latest block number`);
       lastBlockNumber = await this.getLatestBlockNumber(chainId);
     } catch (error: any) {
-      // Release resource
       await this.releaseResource(chainId);
       this.logger.error(
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-        `Unable to fetch latest block: ${error.message}`,
+        `[Chain: ${chainId}] Unable to fetch latest block → ${error.message}`,
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         error.stack,
-        NFPMContractService.name,
       );
     }
 
@@ -110,16 +108,12 @@ export class NFPMContractService
 
     const indexerEventStatus = await this.getIndexerEventStatus('Transfer', chainId);
 
-    // We want to keep record in sync with chain
     if (indexerEventStatus.lastBlockNumber >= lastBlockNumber) {
-      this.logger.debug(
-        `Indexer status check with ID ${indexerEventStatus.id} is up to date with current block. Skipping...`,
-        NFPMContractService.name,
-      );
-      // Release resource
+      this.logger.log(`[Indexer: ${indexerEventStatus.id}] Already at current block. Skipping...`);
       await this.releaseResource(chainId);
       return;
     }
+
     const connectionInfo = this.getConnectionInfo(chainId);
     const promises = connectionInfo.rpcInfos.map((rpcInfo) => {
       const provider = this.provider(rpcInfo, chainId);
@@ -164,8 +158,12 @@ export class NFPMContractService
         this.updateChainMetric(chainId);
       }
     } catch (error: any) {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      this.logger.error(error.message, error.stack, NFPMContractService.name);
+      this.logger.error(
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        `[Chain: ${chainId}] Failed to process transfer events → ${error.message}`,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        error.stack,
+      );
       return;
     }
 
@@ -191,7 +189,6 @@ export class NFPMContractService
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const resolvableTransfer: IResolvableTransfer = JSON.parse(entry);
         const { chainId, tokenId, to, blockNumber, transactionHash } = resolvableTransfer;
-        // Halt resource usage by other processes
         await this.haltUntilOpen(chainId);
 
         const connectionInfo = this.getConnectionInfo(chainId);
@@ -201,9 +198,7 @@ export class NFPMContractService
           return contract.positions(tokenId);
         });
         await this.waitFor(2000);
-        // Find single position
         const position = await Promise.any(positionPromises);
-        // Find pool
         const pool = await this.poolRepository.findOneBy({
           token0: { address: ILike(`%${position.token0}%`) },
           token1: { address: ILike(`%${position.token1}%`) },
@@ -234,7 +229,6 @@ export class NFPMContractService
           });
           await this.liquidityPositionRepository.remove(lp);
         } else {
-          // Transfer
           const lp = await this.liquidityPositionRepository.findOneByOrFail({
             pool: { id: pool.id },
             clPositionTokenId: tokenId,
@@ -257,8 +251,12 @@ export class NFPMContractService
         await this.releaseResource(chainId);
       }
     } catch (error: any) {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      this.logger.error(error.message, error.stack, NFPMContractService.name);
+      this.logger.error(
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        `Failed to resolve transfers → ${error.message}`,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        error.stack,
+      );
       return;
     }
   }
