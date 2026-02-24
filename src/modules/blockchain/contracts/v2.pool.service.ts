@@ -635,11 +635,13 @@ export class V2PoolService
   private async sequenceEvents(address: string, chainId: number) {
     while (this.sequenceEv) {
       try {
-        await this.handleTransfer(address, chainId);
-        await this.handleSync(address, chainId);
-        await this.handleMint(address, chainId);
-        await this.handleSwap(address, chainId);
-        await this.handleBurn(address, chainId);
+        // 10 secs delay
+        await this.waitFor(10000);
+        void this.handleTransfer(address, chainId);
+        void this.handleSync(address, chainId);
+        void this.handleMint(address, chainId);
+        void this.handleSwap(address, chainId);
+        void this.handleBurn(address, chainId);
       } catch (error: any) {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         this.logger.error(error.message, error.stack, V2PoolService.name);
