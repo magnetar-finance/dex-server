@@ -125,7 +125,6 @@ export class V2PoolService
       poolType: Or(Equal(PoolType.STABLE), Equal(PoolType.VOLATILE)),
     });
 
-    // Watch pools
     pools.forEach((pool) => {
       this.WATCHED_ADDRESSES.add(pool.address.toLowerCase());
       this.WATCHED_ADDRESSES_CHAINS.set(pool.address.toLowerCase(), pool.chainId);
@@ -137,24 +136,22 @@ export class V2PoolService
   }
 
   private async handleMint(address: string, chainId: number) {
-    this.logger.log(`Now sequencing lp mint event on ${chainId}`, V2PoolService.name);
+    this.logger.log(`[Chain: ${chainId}] Now sequencing LP mint event`);
     if (!this.cacheService.isConnected()) return;
-    await this.haltUntilOpen(chainId); // If resource is locked, halt at this point
+    await this.haltUntilOpen(chainId);
 
     let lastBlockNumber: number | undefined;
 
     try {
-      this.logger.log(`Now fetching latest block number on ${chainId}`, V2PoolService.name);
+      this.logger.log(`[Chain: ${chainId}] Fetching latest block number`);
       lastBlockNumber = await this.getLatestBlockNumber(chainId);
     } catch (error: any) {
-      // Release resource
       await this.releaseResource(chainId);
       this.logger.error(
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-        `Unable to fetch latest block: ${error.message}`,
+        `[Chain: ${chainId}] Unable to fetch latest block → ${error.message}`,
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         error.stack,
-        V2PoolService.name,
       );
     }
 
@@ -162,13 +159,8 @@ export class V2PoolService
 
     const indexerEventStatus = await this.getIndexerEventStatus(address, 'Mint', chainId);
 
-    // We want to keep record in sync with chain
     if (indexerEventStatus.lastBlockNumber >= lastBlockNumber) {
-      this.logger.debug(
-        `Indexer status check with ID ${indexerEventStatus.id} is up to date with current block. Skipping...`,
-        V2PoolService.name,
-      );
-      // Release resource
+      this.logger.log(`[Indexer: ${indexerEventStatus.id}] Already at current block. Skipping...`);
       await this.releaseResource(chainId);
       return;
     }
@@ -186,7 +178,6 @@ export class V2PoolService
       return contract.queryFilter(contract.filters.Mint, blockStart, blockEnd);
     });
 
-    // Wait for 3 secs
     await this.waitFor(3000);
     const eventData = await Promise.any(promises);
 
@@ -194,7 +185,6 @@ export class V2PoolService
       await this.waitFor(2000);
       const processedBlock = await eventDatum.getBlock();
       const { amount0, amount1, sender } = eventDatum.args;
-      // Transaction
       const transactionId = `${eventDatum.transactionHash.toLowerCase()}-${chainId}`;
       let transactionEntity = await this.transactionRepository.findOneBy({
         id: transactionId,
@@ -232,24 +222,22 @@ export class V2PoolService
   }
 
   private async handleBurn(address: string, chainId: number) {
-    this.logger.log(`Now sequencing lp burn event on ${chainId}`, V2PoolService.name);
+    this.logger.log(`[Chain: ${chainId}] Now sequencing LP burn event`);
     if (!this.cacheService.isConnected()) return;
-    await this.haltUntilOpen(chainId); // If resource is locked, halt at this point
+    await this.haltUntilOpen(chainId);
 
     let lastBlockNumber: number | undefined;
 
     try {
-      this.logger.log(`Now fetching latest block number on ${chainId}`, V2PoolService.name);
+      this.logger.log(`[Chain: ${chainId}] Fetching latest block number`);
       lastBlockNumber = await this.getLatestBlockNumber(chainId);
     } catch (error: any) {
-      // Release resource
       await this.releaseResource(chainId);
       this.logger.error(
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-        `Unable to fetch latest block: ${error.message}`,
+        `[Chain: ${chainId}] Unable to fetch latest block → ${error.message}`,
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         error.stack,
-        V2PoolService.name,
       );
     }
 
@@ -257,13 +245,8 @@ export class V2PoolService
 
     const indexerEventStatus = await this.getIndexerEventStatus(address, 'Burn', chainId);
 
-    // We want to keep record in sync with chain
     if (indexerEventStatus.lastBlockNumber >= lastBlockNumber) {
-      this.logger.debug(
-        `Indexer status check with ID ${indexerEventStatus.id} is up to date with current block. Skipping...`,
-        V2PoolService.name,
-      );
-      // Release resource
+      this.logger.log(`[Indexer: ${indexerEventStatus.id}] Already at current block. Skipping...`);
       await this.releaseResource(chainId);
       return;
     }
@@ -281,7 +264,6 @@ export class V2PoolService
       return contract.queryFilter(contract.filters.Burn, blockStart, blockEnd);
     });
 
-    // Wait for 3 secs
     await this.waitFor(3000);
     const eventData = await Promise.any(promises);
 
@@ -289,7 +271,6 @@ export class V2PoolService
       await this.waitFor(2000);
       const processedBlock = await eventDatum.getBlock();
       const { amount0, amount1, sender } = eventDatum.args;
-      // Transaction
       const transactionId = `${eventDatum.transactionHash.toLowerCase()}-${chainId}`;
       let transactionEntity = await this.transactionRepository.findOneBy({
         id: transactionId,
@@ -326,24 +307,22 @@ export class V2PoolService
   }
 
   private async handleTransfer(address: string, chainId: number) {
-    this.logger.log(`Now sequencing lp transfer event on ${chainId}`, V2PoolService.name);
+    this.logger.log(`[Chain: ${chainId}] Now sequencing LP transfer event`);
     if (!this.cacheService.isConnected()) return;
-    await this.haltUntilOpen(chainId); // If resource is locked, halt at this point
+    await this.haltUntilOpen(chainId);
 
     let lastBlockNumber: number | undefined;
 
     try {
-      this.logger.log(`Now fetching latest block number on ${chainId}`, V2PoolService.name);
+      this.logger.log(`[Chain: ${chainId}] Fetching latest block number`);
       lastBlockNumber = await this.getLatestBlockNumber(chainId);
     } catch (error: any) {
-      // Release resource
       await this.releaseResource(chainId);
       this.logger.error(
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-        `Unable to fetch latest block: ${error.message}`,
+        `[Chain: ${chainId}] Unable to fetch latest block → ${error.message}`,
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         error.stack,
-        V2PoolService.name,
       );
     }
 
@@ -351,13 +330,8 @@ export class V2PoolService
 
     const indexerEventStatus = await this.getIndexerEventStatus(address, 'Transfer', chainId);
 
-    // We want to keep record in sync with chain
     if (indexerEventStatus.lastBlockNumber >= lastBlockNumber) {
-      this.logger.debug(
-        `Indexer status check with ID ${indexerEventStatus.id} is up to date with current block. Skipping...`,
-        V2PoolService.name,
-      );
-      // Release resource
+      this.logger.log(`[Indexer: ${indexerEventStatus.id}] Already at current block. Skipping...`);
       await this.releaseResource(chainId);
       return;
     }
@@ -375,7 +349,6 @@ export class V2PoolService
       return contract.queryFilter(contract.filters.Transfer, blockStart, blockEnd);
     });
 
-    // Wait for 3 secs
     await this.waitFor(3000);
     const eventData = await Promise.any(promises);
 
@@ -384,7 +357,6 @@ export class V2PoolService
       const processedBlock = await eventDatum.getBlock();
       const transaction = await eventDatum.getTransaction();
       const { from, to, value } = eventDatum.args;
-      // Transaction
       const transactionId = `${eventDatum.transactionHash.toLowerCase()}-${chainId}`;
       let transactionEntity = await this.transactionRepository.findOneBy({
         id: transactionId,
@@ -423,24 +395,22 @@ export class V2PoolService
   }
 
   private async handleSwap(address: string, chainId: number) {
-    this.logger.log(`Now sequencing lp swap event on ${chainId}`, V2PoolService.name);
+    this.logger.log(`[Chain: ${chainId}] Now sequencing LP swap event`);
     if (!this.cacheService.isConnected()) return;
-    await this.haltUntilOpen(chainId); // If resource is locked, halt at this point
+    await this.haltUntilOpen(chainId);
 
     let lastBlockNumber: number | undefined;
 
     try {
-      this.logger.log(`Now fetching latest block number on ${chainId}`, V2PoolService.name);
+      this.logger.log(`[Chain: ${chainId}] Fetching latest block number`);
       lastBlockNumber = await this.getLatestBlockNumber(chainId);
     } catch (error: any) {
-      // Release resource
       await this.releaseResource(chainId);
       this.logger.error(
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-        `Unable to fetch latest block: ${error.message}`,
+        `[Chain: ${chainId}] Unable to fetch latest block → ${error.message}`,
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         error.stack,
-        V2PoolService.name,
       );
     }
 
@@ -448,13 +418,8 @@ export class V2PoolService
 
     const indexerEventStatus = await this.getIndexerEventStatus(address, 'Swap', chainId);
 
-    // We want to keep record in sync with chain
     if (indexerEventStatus.lastBlockNumber >= lastBlockNumber) {
-      this.logger.debug(
-        `Indexer status check with ID ${indexerEventStatus.id} is up to date with current block. Skipping...`,
-        V2PoolService.name,
-      );
-      // Release resource
+      this.logger.log(`[Indexer: ${indexerEventStatus.id}] Already at current block. Skipping...`);
       await this.releaseResource(chainId);
       return;
     }
@@ -472,7 +437,6 @@ export class V2PoolService
       return contract.queryFilter(contract.filters.Swap, blockStart, blockEnd);
     });
 
-    // Wait for 3 secs
     await this.waitFor(3000);
     const eventData = await Promise.any(promises);
 
@@ -480,7 +444,6 @@ export class V2PoolService
       await this.waitFor(2000);
       const processedBlock = await eventDatum.getBlock();
       const { sender, to, amount0In, amount1In, amount0Out, amount1Out } = eventDatum.args;
-      // Transaction
       const transactionId = `${eventDatum.transactionHash.toLowerCase()}-${chainId}`;
       let transactionEntity = await this.transactionRepository.findOneBy({
         id: transactionId,
@@ -522,24 +485,22 @@ export class V2PoolService
   }
 
   private async handleSync(address: string, chainId: number) {
-    this.logger.log(`Now sequencing lp swap event on ${chainId}`, V2PoolService.name);
+    this.logger.log(`[Chain: ${chainId}] Now sequencing LP sync event`);
     if (!this.cacheService.isConnected()) return;
-    await this.haltUntilOpen(chainId); // If resource is locked, halt at this point
+    await this.haltUntilOpen(chainId);
 
     let lastBlockNumber: number | undefined;
 
     try {
-      this.logger.log(`Now fetching latest block number on ${chainId}`, V2PoolService.name);
+      this.logger.log(`[Chain: ${chainId}] Fetching latest block number`);
       lastBlockNumber = await this.getLatestBlockNumber(chainId);
     } catch (error: any) {
-      // Release resource
       await this.releaseResource(chainId);
       this.logger.error(
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-        `Unable to fetch latest block: ${error.message}`,
+        `[Chain: ${chainId}] Unable to fetch latest block → ${error.message}`,
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         error.stack,
-        V2PoolService.name,
       );
     }
 
@@ -547,13 +508,8 @@ export class V2PoolService
 
     const indexerEventStatus = await this.getIndexerEventStatus(address, 'Sync', chainId);
 
-    // We want to keep record in sync with chain
     if (indexerEventStatus.lastBlockNumber >= lastBlockNumber) {
-      this.logger.debug(
-        `Indexer status check with ID ${indexerEventStatus.id} is up to date with current block. Skipping...`,
-        V2PoolService.name,
-      );
-      // Release resource
+      this.logger.log(`[Indexer: ${indexerEventStatus.id}] Already at current block. Skipping...`);
       await this.releaseResource(chainId);
       return;
     }
@@ -571,7 +527,6 @@ export class V2PoolService
       return contract.queryFilter(contract.filters.Sync, blockStart, blockEnd);
     });
 
-    // Wait for 3 secs
     await this.waitFor(3000);
     const eventData = await Promise.any(promises);
 
@@ -635,7 +590,6 @@ export class V2PoolService
   private async sequenceEvents(address: string, chainId: number) {
     while (this.sequenceEv) {
       try {
-        // 10 secs delay
         await this.waitFor(10000);
         void this.handleTransfer(address, chainId);
         void this.handleSync(address, chainId);
@@ -643,8 +597,12 @@ export class V2PoolService
         void this.handleSwap(address, chainId);
         void this.handleBurn(address, chainId);
       } catch (error: any) {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-        this.logger.error(error.message, error.stack, V2PoolService.name);
+        this.logger.error(
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+          `[Chain: ${chainId}] Failed to sequence pool events → ${error.message}`,
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+          error.stack,
+        );
       }
     }
   }
@@ -654,9 +612,7 @@ export class V2PoolService
     this.ADDRESS_DEPLOYMENT_BLOCK[payload.address] = payload.block;
     this.watchedAddresses.add(payload.address);
 
-    // Initialize block for events
     for (const eventName of ['Transfer', 'Sync', 'Mint', 'Swap', 'Burn']) {
-      // Update latest block to deployed block
       void this.getIndexerEventStatus(payload.address, eventName, payload.chainId);
     }
 
@@ -665,19 +621,16 @@ export class V2PoolService
 
   private async resolveTransactions() {
     while (this.resolveTxs) {
-      // Make sure cache is connected
       if (!this.cacheService.isConnected()) {
         await this.waitFor(2000);
         continue;
       }
 
-      // Fetch all cached transfers
       const cachedTransfers = await this.cacheService.hObtainAll('transfer');
 
       for (const [hash, stringValue] of Object.entries(cachedTransfers)) {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const resolvableTransfer: IResolvableTransferTransaction = JSON.parse(stringValue);
-        // Search for corresponding mint
         const resolvableMint = await this.cacheService.hObtain<IResolvableMintTransaction>(
           'mint',
           hash,
@@ -685,12 +638,10 @@ export class V2PoolService
 
         if (resolvableMint !== null) {
           await this.resolveMint(resolvableTransfer, resolvableMint);
-          // Clear entries from cache
           await this.cacheService.hDecache('mint', hash);
           await this.cacheService.hDecache('transfer', hash);
         }
 
-        // Search for corresponding burn
         const resolvableBurn = await this.cacheService.hObtain<IResolvableBurnTransaction>(
           'burn',
           hash,
@@ -698,20 +649,17 @@ export class V2PoolService
 
         if (resolvableBurn !== null) {
           await this.resolveBurn(resolvableTransfer, resolvableBurn);
-          // Clear entries from cache
           await this.cacheService.hDecache('burn', hash);
           await this.cacheService.hDecache('transfer', hash);
         }
       }
 
-      // Fetch all cached swaps
       const cachedSwaps = await this.cacheService.hObtainAll('swap');
 
       for (const [hash, stringValue] of Object.entries(cachedSwaps)) {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const resolvableSwap: IResolvableSwapTransaction = JSON.parse(stringValue);
         await this.resolveSwap(resolvableSwap);
-        // Clear entry
         await this.cacheService.hDecache('swap', hash);
       }
     }
@@ -721,26 +669,23 @@ export class V2PoolService
     transferEntry: IResolvableTransferTransaction,
     mintEntry: IResolvableMintTransaction,
   ) {
-    await this.haltUntilOpen(transferEntry.chainId); // Halt resource access
-    // Find pool
+    await this.haltUntilOpen(transferEntry.chainId);
     const poolId = `${transferEntry.token}-${transferEntry.chainId}`;
     const poolEntity = await this.poolRepository.findOneOrFail({
       where: { id: poolId },
       relations: { token0: true, token1: true },
     });
-    await this.waitFor(2000); // Wait for 2 secs
+    await this.waitFor(2000);
 
     const token0 = await this.loadTokenPrice(poolEntity.token0);
     const token1 = await this.loadTokenPrice(poolEntity.token1);
 
-    // Find transaction
     const txId = `${transferEntry.hash}-${transferEntry.chainId}`;
     const transactionEntity = await this.transactionRepository.findOneByOrFail({
       id: txId,
     });
 
-    // Tokens metadata
-    await this.waitFor(3000); // wait for 3 secs
+    await this.waitFor(3000);
 
     const amount0 = parseFloat(formatUnits(mintEntry.amount0, token0.decimals));
     const amount1 = parseFloat(formatUnits(mintEntry.amount1, token1.decimals));
@@ -753,21 +698,27 @@ export class V2PoolService
     const amountETH = amount0ETH + amount1ETH;
     const liquidity = parseFloat(formatEther(transferEntry.amount));
 
-    let mintEntity = this.mintRepository.create({
-      transaction: transactionEntity,
-      to: transferEntry.to,
-      chainId: transactionEntity.chainId,
-      pool: poolEntity,
-      amount0,
-      amount1,
-      amountUSD,
-      sender: mintEntry.sender,
-      logIndex: mintEntry.logIndex,
-      timestamp: transactionEntity.timestamp,
-      liquidity,
+    let mintEntity = await this.mintRepository.findOneBy({
+      id: `mint-${transactionEntity.hash.toLowerCase()}-${transactionEntity.chainId}`,
     });
 
-    mintEntity = await this.mintRepository.save(mintEntity);
+    if (mintEntity === null) {
+      mintEntity = this.mintRepository.create({
+        transaction: transactionEntity,
+        to: transferEntry.to,
+        chainId: transactionEntity.chainId,
+        pool: poolEntity,
+        amount0,
+        amount1,
+        amountUSD,
+        sender: mintEntry.sender,
+        logIndex: mintEntry.logIndex,
+        timestamp: transactionEntity.timestamp,
+        liquidity,
+      });
+
+      mintEntity = await this.mintRepository.save(mintEntity);
+    }
 
     token0.txCount = token0.txCount + 1;
     token1.txCount = token1.txCount + 1;
@@ -780,7 +731,6 @@ export class V2PoolService
       this.poolRepository.save(poolEntity),
     ]);
 
-    // Update data
     const statistics = await this.loadStatistics(transactionEntity.chainId);
     statistics.txCount = statistics.txCount + 1;
     await this.statisticsRepository.save(statistics);
@@ -844,26 +794,23 @@ export class V2PoolService
     transferEntry: IResolvableTransferTransaction,
     burnEntry: IResolvableBurnTransaction,
   ) {
-    await this.haltUntilOpen(transferEntry.chainId); // Halt resource access
-    // Find pool
+    await this.haltUntilOpen(transferEntry.chainId);
     const poolId = `${transferEntry.token}-${transferEntry.chainId}`;
     const poolEntity = await this.poolRepository.findOneOrFail({
       where: { id: poolId },
       relations: { token0: true, token1: true },
     });
-    await this.waitFor(2000); // Wait for 2 secs
+    await this.waitFor(2000);
 
     const token0 = await this.loadTokenPrice(poolEntity.token0);
     const token1 = await this.loadTokenPrice(poolEntity.token1);
 
-    // Find transaction
     const txId = `${transferEntry.hash}-${transferEntry.chainId}`;
     const transactionEntity = await this.transactionRepository.findOneByOrFail({
       id: txId,
     });
 
-    // Tokens metadata
-    await this.waitFor(3000); // wait for 3 secs
+    await this.waitFor(3000);
 
     const amount0 = parseFloat(formatUnits(burnEntry.amount0, token0.decimals));
     const amount1 = parseFloat(formatUnits(burnEntry.amount1, token1.decimals));
@@ -872,21 +819,27 @@ export class V2PoolService
     const amountUSD = amount0USD + amount1USD;
     const liquidity = parseFloat(formatEther(transferEntry.amount));
 
-    let burnEntity = this.burnRepository.create({
-      transaction: transactionEntity,
-      to: transferEntry.to,
-      chainId: transactionEntity.chainId,
-      pool: poolEntity,
-      amount0,
-      amount1,
-      amountUSD,
-      sender: burnEntry.sender,
-      logIndex: burnEntry.logIndex,
-      timestamp: transactionEntity.timestamp,
-      liquidity,
+    let burnEntity = await this.burnRepository.findOneBy({
+      id: `burn-${transactionEntity.hash.toLowerCase()}-${transactionEntity.chainId}`,
     });
 
-    burnEntity = await this.burnRepository.save(burnEntity);
+    if (burnEntity === null) {
+      burnEntity = this.burnRepository.create({
+        transaction: transactionEntity,
+        to: transferEntry.to,
+        chainId: transactionEntity.chainId,
+        pool: poolEntity,
+        amount0,
+        amount1,
+        amountUSD,
+        sender: burnEntry.sender,
+        logIndex: burnEntry.logIndex,
+        timestamp: transactionEntity.timestamp,
+        liquidity,
+      });
+
+      burnEntity = await this.burnRepository.save(burnEntity);
+    }
 
     token0.txCount = token0.txCount + 1;
     token1.txCount = token1.txCount + 1;
@@ -899,7 +852,6 @@ export class V2PoolService
       this.poolRepository.save(poolEntity),
     ]);
 
-    // Update data
     const statistics = await this.loadStatistics(transactionEntity.chainId);
     statistics.txCount = statistics.txCount + 1;
     await this.statisticsRepository.save(statistics);
@@ -918,28 +870,25 @@ export class V2PoolService
   }
 
   private async resolveSwap(swapEntry: IResolvableSwapTransaction) {
-    await this.haltUntilOpen(swapEntry.chainId); // Halt resource access
+    await this.haltUntilOpen(swapEntry.chainId);
 
-    // Find pool
     const poolId = `${swapEntry.token}-${swapEntry.chainId}`;
     const poolEntity = await this.poolRepository.findOneOrFail({
       where: { id: poolId },
       relations: { token0: true, token1: true },
     });
 
-    await this.waitFor(2000); // Wait for 2 secs
+    await this.waitFor(2000);
 
     let token0 = await this.loadTokenPrice(poolEntity.token0);
     let token1 = await this.loadTokenPrice(poolEntity.token1);
 
-    // Find transaction
     const txId = `${swapEntry.hash}-${swapEntry.chainId}`;
     const transactionEntity = await this.transactionRepository.findOneByOrFail({
       id: txId,
     });
 
-    // Tokens metadata
-    await this.waitFor(3000); // wait for 3 secs
+    await this.waitFor(3000);
 
     const amount0In = parseFloat(formatUnits(swapEntry.amount0In, token0.decimals));
     const amount1In = parseFloat(formatUnits(swapEntry.amount1In, token1.decimals));
@@ -952,23 +901,29 @@ export class V2PoolService
     const amount1ETH = amount1Total * token1.derivedETH;
     const amount1USD = amount1Total * token1.derivedUSD;
 
-    let swapEntity = this.swapRepository.create({
-      transaction: transactionEntity,
-      timestamp: transactionEntity.timestamp,
-      pool: poolEntity,
-      amount0In,
-      amount0Out,
-      amount1In,
-      amount1Out,
-      amountUSD: amount0USD + amount1USD,
-      chainId: transactionEntity.chainId,
-      from: swapEntry.from,
-      to: swapEntry.to,
-      logIndex: swapEntry.logIndex,
-      sender: swapEntry.sender,
+    let swapEntity = await this.swapRepository.findOneBy({
+      id: `swap-${transactionEntity.hash.toLowerCase()}-${transactionEntity.chainId}`,
     });
 
-    swapEntity = await this.swapRepository.save(swapEntity);
+    if (swapEntity === null) {
+      swapEntity = this.swapRepository.create({
+        transaction: transactionEntity,
+        timestamp: transactionEntity.timestamp,
+        pool: poolEntity,
+        amount0In,
+        amount0Out,
+        amount1In,
+        amount1Out,
+        amountUSD: amount0USD + amount1USD,
+        chainId: transactionEntity.chainId,
+        from: swapEntry.from,
+        to: swapEntry.to,
+        logIndex: swapEntry.logIndex,
+        sender: swapEntry.sender,
+      });
+
+      swapEntity = await this.swapRepository.save(swapEntity);
+    }
 
     poolEntity.volumeETH = poolEntity.volumeETH + amount0ETH + amount1ETH;
     poolEntity.volumeUSD = poolEntity.volumeUSD + amount0USD + amount1USD;
@@ -987,7 +942,6 @@ export class V2PoolService
     token1.txCount = token1.txCount + 1;
     token1 = await this.tokenRepository.save(token1);
 
-    // Update data
     const statistics = await this.loadStatistics(transactionEntity.chainId);
     statistics.totalTradeVolumeETH = statistics.totalTradeVolumeETH + amount0ETH + amount1ETH;
     statistics.totalTradeVolumeUSD = statistics.totalTradeVolumeUSD + amount0USD + amount1USD;
@@ -1049,7 +1003,6 @@ export class V2PoolService
       promises.push(this.sequenceEvents(pool, chains[pool]));
     }
 
-    // All pools process in parallel
     await Promise.all(promises);
   }
 
@@ -1057,7 +1010,6 @@ export class V2PoolService
     token.derivedUSD = await this.oracle.getPriceInUSD(token.address, token.chainId);
     token.derivedETH = await this.oracle.getPriceInETH(token.address, token.chainId);
 
-    // Update token
     token = await this.tokenRepository.save(token);
     return token;
   }

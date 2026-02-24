@@ -31,7 +31,7 @@ export class V2FactoryService extends BaseFactoryContractService implements OnMo
   }
 
   async onModuleInit() {
-    await this.waitFor(10000); // Wait for 10 seconds
+    await this.waitFor(10000);
     this.initializeContracts();
     this.initializeStartBlocks();
   }
@@ -58,27 +58,25 @@ export class V2FactoryService extends BaseFactoryContractService implements OnMo
   }
 
   async handlePoolCreated(chainId: number) {
-    this.logger.log(`⚙️  Sequencing → Pool Creation Event [Chain: ${chainId}, Factory: V2Factory]`);
+    this.logger.log(`[Chain: ${chainId}] Now sequencing pool creation event`);
     if (!this.cacheService.isConnected()) {
       await this.waitFor(2000);
       return;
     }
-    await this.haltUntilOpen(chainId); // If resource is locked, halt at this point
+    await this.haltUntilOpen(chainId);
 
     let lastBlockNumber: number | undefined;
 
     try {
-      this.logger.log(`🔍 Fetching latest block number on chain ${chainId} (V2Factory)`);
+      this.logger.log(`[Chain: ${chainId}] Fetching latest block number`);
       lastBlockNumber = await this.getLatestBlockNumber(chainId);
     } catch (error: any) {
-      // Release resource
       await this.releaseResource(chainId);
       this.logger.error(
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-        `Unable to fetch latest block: ${error.message}`,
+        `[Chain: ${chainId}] Unable to fetch latest block → ${error.message}`,
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         error.stack,
-        V2FactoryService.name,
       );
     }
 
@@ -86,13 +84,8 @@ export class V2FactoryService extends BaseFactoryContractService implements OnMo
 
     const indexerEventStatus = await this.getIndexerEventStatus('PoolCreated', chainId);
 
-    // We want to keep record in sync with chain
     if (indexerEventStatus.lastBlockNumber >= lastBlockNumber) {
-      this.logger.debug(
-        `Indexer status check with ID ${indexerEventStatus.id} is up to date with current block. Skipping...`,
-        V2FactoryService.name,
-      );
-      // Release resource
+      this.logger.log(`[Indexer: ${indexerEventStatus.id}] Already at current block. Skipping...`);
       await this.releaseResource(chainId);
       return;
     }
@@ -110,7 +103,6 @@ export class V2FactoryService extends BaseFactoryContractService implements OnMo
       return contract.queryFilter(contract.filters.PoolCreated, blockStart, blockEnd);
     });
 
-    // Wait for 3 secs
     await this.waitFor(3000);
     try {
       const eventData = await Promise.any(promises);
@@ -122,7 +114,6 @@ export class V2FactoryService extends BaseFactoryContractService implements OnMo
         const token0Id = `${token0.toLowerCase()}-${chainId}`;
         const token1Id = `${token1.toLowerCase()}-${chainId}`;
 
-        // Find tokens
         let token0Entity = await this.tokenRepository.findOneBy({ id: token0Id });
         let token1Entity = await this.tokenRepository.findOneBy({ id: token1Id });
 
@@ -201,13 +192,10 @@ export class V2FactoryService extends BaseFactoryContractService implements OnMo
           gaugeFeesUSD: 0,
         });
 
-        // Insert pool
         await this.poolRepository.save(poolEntity);
 
-        // Update indexer status
         indexerEventStatus.lastBlockNumber = processedBlock.number;
 
-        // Update stats
         const statistics = await this.loadStatistics(chainId);
         statistics.totalPairsCreated = statistics.totalPairsCreated + 1;
 
@@ -221,8 +209,12 @@ export class V2FactoryService extends BaseFactoryContractService implements OnMo
         });
       }
     } catch (error: any) {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      this.logger.error(error.message, error.stack, V2FactoryService.name);
+      this.logger.error(
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        `[Chain: ${chainId}] Failed to process pool creation events → ${error.message}`,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        error.stack,
+      );
       return;
     }
 
