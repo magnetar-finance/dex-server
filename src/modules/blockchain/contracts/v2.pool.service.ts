@@ -1143,6 +1143,7 @@ export class V2PoolService
     });
     if (poolHourData === null) {
       poolHourData = this.poolHourDataRepository.create({
+        id: hourPoolId,
         hourStartUnix,
         pool,
         hourlyTxns: 0,
