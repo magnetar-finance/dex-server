@@ -626,6 +626,8 @@ export class V2PoolService
         continue;
       }
 
+      this.logger.log(`Attempting transaction resolutions...`);
+
       const cachedTransfers = await this.cacheService.hObtainAll('transfer');
 
       for (const [hash, stringValue] of Object.entries(cachedTransfers)) {
