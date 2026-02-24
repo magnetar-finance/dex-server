@@ -215,7 +215,7 @@ export class V2FactoryService extends BaseFactoryContractService implements OnMo
 
         this.updateChainMetric(chainId);
         this.eventEmitter.emit(EventTypes.V2_POOL_DEPLOYED, {
-          address: pool,
+          address: pool.toLowerCase(),
           block: processedBlock.number,
           chainId,
         });
