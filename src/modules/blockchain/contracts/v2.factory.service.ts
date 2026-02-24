@@ -196,6 +196,9 @@ export class V2FactoryService extends BaseFactoryContractService implements OnMo
           poolType: stable ? PoolType.STABLE : PoolType.VOLATILE,
           createdAtTimestamp: processedBlock.timestamp,
           createdAtBlockNumber: processedBlock.number,
+          gaugeFees0CurrentEpoch: 0,
+          gaugeFees1CurrentEpoch: 0,
+          gaugeFeesUSD: 0,
         });
 
         // Insert pool
