@@ -62,7 +62,7 @@ export class CLPoolService
 
     this.sequenceEv = true;
 
-    void this.sequenceAllEvents();
+    this.sequenceAllEvents();
 
     process.on('SIGINT', () => {
       this.sequenceEv = false;
@@ -343,9 +343,10 @@ export class CLPoolService
   private async sequenceEvents(address: string, chainId: number) {
     while (this.sequenceEv) {
       try {
-        await this.handleMint(address, chainId);
-        await this.handleSwap(address, chainId);
-        await this.handleBurn(address, chainId);
+        await this.waitFor(10000);
+        void this.handleMint(address, chainId);
+        void this.handleSwap(address, chainId);
+        void this.handleBurn(address, chainId);
       } catch (error: any) {
         this.logger.error(
           // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
@@ -696,15 +697,12 @@ export class CLPoolService
     return swapEntity;
   }
 
-  private async sequenceAllEvents() {
+  private sequenceAllEvents() {
     const chains = Object.fromEntries(this.WATCHED_ADDRESSES_CHAINS);
-    const promises: Promise<void>[] = [];
 
     for (const pool of this.WATCHED_ADDRESSES.values()) {
-      promises.push(this.sequenceEvents(pool, chains[pool]));
+      void this.sequenceEvents(pool, chains[pool]);
     }
-
-    await Promise.all(promises);
   }
 
   private async loadTokenPrice(token: Token): Promise<Token> {

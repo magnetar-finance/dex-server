@@ -64,7 +64,6 @@ export class V2PoolService
   extends BaseFactoryDeployedContractService
   implements OnModuleInit, OnModuleDestroy
 {
-  private resolveTxs: boolean = false;
   private sequenceEv: boolean = false;
 
   constructor(
@@ -101,20 +100,15 @@ export class V2PoolService
   async onModuleInit() {
     await this.initializeWatchedAddresses();
 
-    this.resolveTxs = true;
     this.sequenceEv = true;
-
-    void this.resolveTransactions();
-    void this.sequenceAllEvents();
+    this.sequenceAllEventsAndResolveTxs();
 
     process.on('SIGINT', () => {
       this.sequenceEv = false;
-      this.resolveTxs = false;
     });
   }
 
   onModuleDestroy() {
-    this.resolveTxs = false;
     this.sequenceEv = false;
     this.WATCHED_ADDRESSES.clear();
     this.WATCHED_ADDRESSES_CHAINS.clear();
@@ -587,7 +581,7 @@ export class V2PoolService
     await this.releaseResource(chainId);
   }
 
-  private async sequenceEvents(address: string, chainId: number) {
+  private async sequenceEventsAndResolveTxs(address: string, chainId: number) {
     while (this.sequenceEv) {
       try {
         await this.waitFor(10000);
@@ -596,6 +590,9 @@ export class V2PoolService
         void this.handleMint(address, chainId);
         void this.handleSwap(address, chainId);
         void this.handleBurn(address, chainId);
+        // Resolve
+        await this.waitFor(5000); // Wait for 5 more secs before resolution
+        void this.resolveTransactions(address, chainId);
       } catch (error: any) {
         this.logger.error(
           // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
@@ -616,54 +613,55 @@ export class V2PoolService
       void this.getIndexerEventStatus(payload.address, eventName, payload.chainId);
     }
 
-    void this.sequenceEvents(payload.address, payload.chainId);
+    void this.sequenceEventsAndResolveTxs(payload.address, payload.chainId);
   }
 
-  private async resolveTransactions() {
-    while (this.resolveTxs) {
-      if (!this.cacheService.isConnected()) {
-        await this.waitFor(2000);
-        continue;
+  private async resolveTransactions(address: string, chainId: number) {
+    if (!this.cacheService.isConnected()) return; // Cache must be connected
+
+    this.logger.log(`Attempting transaction resolutions...`);
+
+    const cachedTransfers = await this.cacheService.hObtainAll('transfer');
+    // Find cached transfers matching parameters
+    const filteredTransfers = Object.values(cachedTransfers)
+      .map((transfer) => JSON.parse(transfer) as IResolvableTransferTransaction)
+      .filter(
+        (transfer) =>
+          transfer.chainId === chainId && transfer.token.toLowerCase() === address.toLowerCase(),
+      );
+
+    // Find equivalent mints or burns
+    for (const transfer of filteredTransfers) {
+      const resolvableMint = await this.cacheService.hObtain<IResolvableMintTransaction>(
+        'mint',
+        transfer.hash,
+      );
+
+      if (resolvableMint !== null) {
+        await this.resolveMint(transfer, resolvableMint);
+        await this.cacheService.hDecache('mint', transfer.hash);
+        await this.cacheService.hDecache('transfer', transfer.hash);
       }
 
-      this.logger.log(`Attempting transaction resolutions...`);
+      const resolvableBurn = await this.cacheService.hObtain<IResolvableBurnTransaction>(
+        'burn',
+        transfer.hash,
+      );
 
-      const cachedTransfers = await this.cacheService.hObtainAll('transfer');
-
-      for (const [hash, stringValue] of Object.entries(cachedTransfers)) {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        const resolvableTransfer: IResolvableTransferTransaction = JSON.parse(stringValue);
-        const resolvableMint = await this.cacheService.hObtain<IResolvableMintTransaction>(
-          'mint',
-          hash,
-        );
-
-        if (resolvableMint !== null) {
-          await this.resolveMint(resolvableTransfer, resolvableMint);
-          await this.cacheService.hDecache('mint', hash);
-          await this.cacheService.hDecache('transfer', hash);
-        }
-
-        const resolvableBurn = await this.cacheService.hObtain<IResolvableBurnTransaction>(
-          'burn',
-          hash,
-        );
-
-        if (resolvableBurn !== null) {
-          await this.resolveBurn(resolvableTransfer, resolvableBurn);
-          await this.cacheService.hDecache('burn', hash);
-          await this.cacheService.hDecache('transfer', hash);
-        }
+      if (resolvableBurn !== null) {
+        await this.resolveBurn(transfer, resolvableBurn);
+        await this.cacheService.hDecache('burn', transfer.hash);
+        await this.cacheService.hDecache('transfer', transfer.hash);
       }
+    }
 
-      const cachedSwaps = await this.cacheService.hObtainAll('swap');
+    const cachedSwaps = await this.cacheService.hObtainAll('swap');
 
-      for (const [hash, stringValue] of Object.entries(cachedSwaps)) {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        const resolvableSwap: IResolvableSwapTransaction = JSON.parse(stringValue);
-        await this.resolveSwap(resolvableSwap);
-        await this.cacheService.hDecache('swap', hash);
-      }
+    for (const [hash, stringValue] of Object.entries(cachedSwaps)) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      const resolvableSwap: IResolvableSwapTransaction = JSON.parse(stringValue);
+      await this.resolveSwap(resolvableSwap);
+      await this.cacheService.hDecache('swap', hash);
     }
   }
 
@@ -997,15 +995,12 @@ export class V2PoolService
     return swapEntity;
   }
 
-  private async sequenceAllEvents() {
+  private sequenceAllEventsAndResolveTxs() {
     const chains = Object.fromEntries(this.WATCHED_ADDRESSES_CHAINS);
-    const promises: Promise<void>[] = [];
 
     for (const pool of this.WATCHED_ADDRESSES.values()) {
-      promises.push(this.sequenceEvents(pool, chains[pool]));
+      void this.sequenceEventsAndResolveTxs(pool, chains[pool]);
     }
-
-    await Promise.all(promises);
   }
 
   private async loadTokenPrice(token: Token): Promise<Token> {
