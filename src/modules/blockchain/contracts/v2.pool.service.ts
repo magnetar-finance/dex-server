@@ -172,11 +172,10 @@ export class V2PoolService
       return contract.queryFilter(contract.filters.Mint, blockStart, blockEnd);
     });
 
-    await this.waitFor(3000);
     const eventData = await Promise.any(promises);
 
     for (const eventDatum of eventData) {
-      await this.waitFor(2000);
+      await this.waitFor(500);
       const processedBlock = await eventDatum.getBlock();
       const { amount0, amount1, sender } = eventDatum.args;
       const transactionId = `${eventDatum.transactionHash.toLowerCase()}-${chainId}`;
@@ -258,11 +257,10 @@ export class V2PoolService
       return contract.queryFilter(contract.filters.Burn, blockStart, blockEnd);
     });
 
-    await this.waitFor(3000);
     const eventData = await Promise.any(promises);
 
     for (const eventDatum of eventData) {
-      await this.waitFor(2000);
+      await this.waitFor(500);
       const processedBlock = await eventDatum.getBlock();
       const { amount0, amount1, sender } = eventDatum.args;
       const transactionId = `${eventDatum.transactionHash.toLowerCase()}-${chainId}`;
@@ -343,11 +341,10 @@ export class V2PoolService
       return contract.queryFilter(contract.filters.Transfer, blockStart, blockEnd);
     });
 
-    await this.waitFor(3000);
     const eventData = await Promise.any(promises);
 
     for (const eventDatum of eventData) {
-      await this.waitFor(2000);
+      await this.waitFor(500);
       const processedBlock = await eventDatum.getBlock();
       const transaction = await eventDatum.getTransaction();
       const { from, to, value } = eventDatum.args;
@@ -431,11 +428,10 @@ export class V2PoolService
       return contract.queryFilter(contract.filters.Swap, blockStart, blockEnd);
     });
 
-    await this.waitFor(3000);
     const eventData = await Promise.any(promises);
 
     for (const eventDatum of eventData) {
-      await this.waitFor(2000);
+      await this.waitFor(500);
       const processedBlock = await eventDatum.getBlock();
       const { sender, to, amount0In, amount1In, amount0Out, amount1Out } = eventDatum.args;
       const transactionId = `${eventDatum.transactionHash.toLowerCase()}-${chainId}`;
@@ -521,7 +517,6 @@ export class V2PoolService
       return contract.queryFilter(contract.filters.Sync, blockStart, blockEnd);
     });
 
-    await this.waitFor(3000);
     const eventData = await Promise.any(promises);
 
     for (const eventDatum of eventData) {
@@ -532,7 +527,7 @@ export class V2PoolService
         relations: { token0: true, token1: true },
       });
 
-      await this.waitFor(2000);
+      await this.waitFor(500);
       const token0 = await this.loadTokenPrice(poolEntity.token0);
       const token1 = await this.loadTokenPrice(poolEntity.token1);
 
@@ -584,14 +579,14 @@ export class V2PoolService
   private async sequenceEventsAndResolveTxs(address: string, chainId: number) {
     while (this.sequenceEv) {
       try {
-        await this.waitFor(10000);
+        await this.waitFor(500);
         void this.handleTransfer(address, chainId);
         void this.handleSync(address, chainId);
         void this.handleMint(address, chainId);
         void this.handleSwap(address, chainId);
         void this.handleBurn(address, chainId);
         // Resolve
-        await this.waitFor(5000); // Wait for 5 more secs before resolution
+        await this.waitFor(500); // Wait for 500 millisecs before resolution
         void this.resolveTransactions(address, chainId);
       } catch (error: any) {
         this.logger.error(
@@ -675,7 +670,7 @@ export class V2PoolService
       where: { id: poolId },
       relations: { token0: true, token1: true },
     });
-    await this.waitFor(2000);
+    await this.waitFor(500);
 
     const token0 = await this.loadTokenPrice(poolEntity.token0);
     const token1 = await this.loadTokenPrice(poolEntity.token1);
@@ -685,7 +680,7 @@ export class V2PoolService
       id: txId,
     });
 
-    await this.waitFor(3000);
+    await this.waitFor(500);
 
     const amount0 = parseFloat(formatUnits(mintEntry.amount0, token0.decimals));
     const amount1 = parseFloat(formatUnits(mintEntry.amount1, token1.decimals));
@@ -800,7 +795,7 @@ export class V2PoolService
       where: { id: poolId },
       relations: { token0: true, token1: true },
     });
-    await this.waitFor(2000);
+    await this.waitFor(500);
 
     const token0 = await this.loadTokenPrice(poolEntity.token0);
     const token1 = await this.loadTokenPrice(poolEntity.token1);
@@ -810,7 +805,7 @@ export class V2PoolService
       id: txId,
     });
 
-    await this.waitFor(3000);
+    await this.waitFor(500);
 
     const amount0 = parseFloat(formatUnits(burnEntry.amount0, token0.decimals));
     const amount1 = parseFloat(formatUnits(burnEntry.amount1, token1.decimals));
@@ -878,7 +873,7 @@ export class V2PoolService
       relations: { token0: true, token1: true },
     });
 
-    await this.waitFor(2000);
+    await this.waitFor(500);
 
     let token0 = await this.loadTokenPrice(poolEntity.token0);
     let token1 = await this.loadTokenPrice(poolEntity.token1);
@@ -888,7 +883,7 @@ export class V2PoolService
       id: txId,
     });
 
-    await this.waitFor(3000);
+    await this.waitFor(500);
 
     const amount0In = parseFloat(formatUnits(swapEntry.amount0In, token0.decimals));
     const amount1In = parseFloat(formatUnits(swapEntry.amount1In, token1.decimals));

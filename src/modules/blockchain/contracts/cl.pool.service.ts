@@ -133,11 +133,10 @@ export class CLPoolService
       return contract.queryFilter(contract.filters.Mint, blockStart, blockEnd);
     });
 
-    await this.waitFor(3000);
     const eventData = await Promise.any(promises);
 
     for (const eventDatum of eventData) {
-      await this.waitFor(2000);
+      await this.waitFor(500);
       const processedBlock = await eventDatum.getBlock();
       const { amount0, amount1, sender, amount, owner } = eventDatum.args;
       const transactionId = `${eventDatum.transactionHash.toLowerCase()}-${chainId}`;
@@ -215,11 +214,10 @@ export class CLPoolService
       return contract.queryFilter(contract.filters.Burn, blockStart, blockEnd);
     });
 
-    await this.waitFor(3000);
     const eventData = await Promise.any(promises);
 
     for (const eventDatum of eventData) {
-      await this.waitFor(2000);
+      await this.waitFor(500);
       const processedBlock = await eventDatum.getBlock();
       const tx = await eventDatum.getTransaction();
       const { amount0, amount1, amount, owner } = eventDatum.args;
@@ -299,11 +297,10 @@ export class CLPoolService
       return contract.queryFilter(contract.filters.Swap, blockStart, blockEnd);
     });
 
-    await this.waitFor(3000);
     const eventData = await Promise.any(promises);
 
     for (const eventDatum of eventData) {
-      await this.waitFor(2000);
+      await this.waitFor(500);
       const processedBlock = await eventDatum.getBlock();
       const { sender, recipient, amount0, amount1 } = eventDatum.args;
       const transactionId = `${eventDatum.transactionHash.toLowerCase()}-${chainId}`;
@@ -343,7 +340,7 @@ export class CLPoolService
   private async sequenceEvents(address: string, chainId: number) {
     while (this.sequenceEv) {
       try {
-        await this.waitFor(10000);
+        await this.waitFor(500);
         void this.handleMint(address, chainId);
         void this.handleSwap(address, chainId);
         void this.handleBurn(address, chainId);
@@ -381,7 +378,7 @@ export class CLPoolService
       where: { id: poolId },
       relations: { token0: true, token1: true },
     });
-    await this.waitFor(2000);
+    await this.waitFor(500);
 
     const token0 = await this.loadTokenPrice(poolEntity.token0);
     const token1 = await this.loadTokenPrice(poolEntity.token1);
@@ -391,7 +388,7 @@ export class CLPoolService
       id: txId,
     });
 
-    await this.waitFor(3000);
+    await this.waitFor(500);
 
     const amount0 = parseFloat(formatUnits(amountA, token0.decimals));
     const amount1 = parseFloat(formatUnits(amountB, token1.decimals));
@@ -502,7 +499,7 @@ export class CLPoolService
       where: { id: poolId },
       relations: { token0: true, token1: true },
     });
-    await this.waitFor(2000);
+    await this.waitFor(500);
 
     const token0 = await this.loadTokenPrice(poolEntity.token0);
     const token1 = await this.loadTokenPrice(poolEntity.token1);
@@ -512,7 +509,7 @@ export class CLPoolService
       id: txId,
     });
 
-    await this.waitFor(3000);
+    await this.waitFor(500);
 
     const amount0 = parseFloat(formatUnits(amountA, token0.decimals));
     const amount1 = parseFloat(formatUnits(amountB, token1.decimals));
@@ -583,7 +580,7 @@ export class CLPoolService
       relations: { token0: true, token1: true },
     });
 
-    await this.waitFor(2000);
+    await this.waitFor(500);
 
     let token0 = await this.loadTokenPrice(poolEntity.token0);
     let token1 = await this.loadTokenPrice(poolEntity.token1);
