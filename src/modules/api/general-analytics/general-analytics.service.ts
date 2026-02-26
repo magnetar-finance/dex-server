@@ -80,7 +80,7 @@ export class GeneralAnalyticsService {
 
   getStatistics(chainId?: number) {
     return this.statisticsRepository.findOneBy({
-      id: `$1-${chainId}`,
+      id: `1-${chainId}`,
     });
   }
 }
