@@ -103,11 +103,11 @@ export class V2FactoryService extends BaseFactoryContractService implements OnMo
       return contract.queryFilter(contract.filters.PoolCreated, blockStart, blockEnd);
     });
 
-    await this.waitFor(3000);
     try {
       const eventData = await Promise.any(promises);
 
       for (const eventDatum of eventData) {
+        await this.waitFor(500);
         const processedBlock = await eventDatum.getBlock();
         const { pool, token0, token1, stable } = eventDatum.args;
 

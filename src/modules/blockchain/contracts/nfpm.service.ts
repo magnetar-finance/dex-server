@@ -127,13 +127,11 @@ export class NFPMContractService
       return contract.queryFilter(contract.filters.Transfer, blockStart, blockEnd);
     });
 
-    await this.waitFor(3000);
-
     try {
       const eventData = await Promise.any(promises);
 
       for (const eventDatum of eventData) {
-        await this.waitFor(2000);
+        await this.waitFor(500);
         const processedBlock = await eventDatum.getBlock();
         const { from, to, tokenId } = eventDatum.args;
 
@@ -197,7 +195,7 @@ export class NFPMContractService
           const contract = this.getNFPMContract(chainId, provider);
           return contract.positions(tokenId);
         });
-        await this.waitFor(2000);
+        await this.waitFor(500);
         const position = await Promise.any(positionPromises);
         const pool = await this.poolRepository.findOneBy({
           token0: { address: ILike(`%${position.token0}%`) },
