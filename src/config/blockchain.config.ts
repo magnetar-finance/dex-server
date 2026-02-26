@@ -7,7 +7,7 @@ function loadChainInfo(): ChainConnectionInfo[] {
       rpcInfos: [
         {
           url: 'https://rpc.testnet.evm.dusk.network',
-          queryBlockRange: 100,
+          queryBlockRange: 300,
         },
       ],
       chainId: ChainIds.DUSK_TESTNET,
@@ -16,11 +16,11 @@ function loadChainInfo(): ChainConnectionInfo[] {
       rpcInfos: [
         {
           url: 'https://atlantic.dplabs-internal.com',
-          queryBlockRange: 100,
+          queryBlockRange: 300,
         },
         {
           url: 'https://api.zan.top/node/v1/pharos/atlantic/5c34a51f74114a7a9c201593fb45a73e',
-          queryBlockRange: 100,
+          queryBlockRange: 300,
         },
       ],
       chainId: ChainIds.PHAROS_TESTNET,
@@ -29,7 +29,7 @@ function loadChainInfo(): ChainConnectionInfo[] {
       rpcInfos: [
         {
           url: 'https://gcp-2.seismictest.net/rpc',
-          queryBlockRange: 100,
+          queryBlockRange: 300,
         },
       ],
       chainId: ChainIds.SEISMIC_TESTNET,
