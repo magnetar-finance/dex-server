@@ -200,7 +200,7 @@ export class CLFactoryService extends BaseFactoryContractService implements OnMo
         this.updateChainMetric(chainId);
         this.eventEmitter.emit(EventTypes.CL_POOL_DEPLOYED, {
           address: pool.toLowerCase(),
-          block: processedBlock.number,
+          block: processedBlock.number - 1,
           chainId,
         });
       }
