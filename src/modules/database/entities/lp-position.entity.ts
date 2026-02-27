@@ -1,6 +1,5 @@
 import {
   BeforeInsert,
-  BeforeUpdate,
   Column,
   CreateDateColumn,
   Entity,
@@ -73,7 +72,6 @@ export class LiquidityPosition {
   updatedAt: Date;
 
   @BeforeInsert()
-  @BeforeUpdate()
   preSave() {
     this.id = this.account
       ? `${this.pool.address.toLowerCase()}-${this.account.address.toLowerCase()}-${this.chainId}`
