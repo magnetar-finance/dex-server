@@ -165,7 +165,11 @@ export class CLPoolService
       const events = Object.values(this.poolEvents);
 
       for (const eventHash of events) {
-        const indexerEventStatus = await this.getIndexerEventStatus('GLOBAL_CL', eventHash, chainId);
+        const indexerEventStatus = await this.getIndexerEventStatus(
+          'GLOBAL_CL',
+          eventHash,
+          chainId,
+        );
         if (indexerEventStatus.lastBlockNumber >= lastBlockNumber) continue;
 
         const connectionInfo = this.getConnectionInfo(chainId);
@@ -250,7 +254,11 @@ export class CLPoolService
         logIndex: log.index,
         sender: args.sender,
       };
-      await this.cacheService.hCache('cl-mint', resolvableMint.hash, JSON.stringify(resolvableMint));
+      await this.cacheService.hCache(
+        'cl-mint',
+        resolvableMint.hash,
+        JSON.stringify(resolvableMint),
+      );
     } else if (eventHash === this.poolEvents.BURN) {
       const resolvableBurn: IResolvableCLBurnTransaction = {
         to: args.owner,
@@ -262,7 +270,11 @@ export class CLPoolService
         logIndex: log.index,
         sender: args.owner,
       };
-      await this.cacheService.hCache('cl-burn', resolvableBurn.hash, JSON.stringify(resolvableBurn));
+      await this.cacheService.hCache(
+        'cl-burn',
+        resolvableBurn.hash,
+        JSON.stringify(resolvableBurn),
+      );
     } else if (eventHash === this.poolEvents.SWAP) {
       const resolvableSwap: IResolvableCLSwapTransaction = {
         from: args.sender,
@@ -274,7 +286,11 @@ export class CLPoolService
         logIndex: log.index,
         sender: args.sender,
       };
-      await this.cacheService.hCache('cl-swap', resolvableSwap.hash, JSON.stringify(resolvableSwap));
+      await this.cacheService.hCache(
+        'cl-swap',
+        resolvableSwap.hash,
+        JSON.stringify(resolvableSwap),
+      );
     }
 
     this.updateChainMetric(chainId);
