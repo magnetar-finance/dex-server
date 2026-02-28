@@ -28,6 +28,7 @@ import { Statistics } from '../../database/entities/statistics.entity';
 import { TokenDayData } from '../../database/entities/token-day-data.entity';
 import { LiquidityPosition } from '../../database/entities/lp-position.entity';
 import { User } from '../../database/entities/user.entity';
+import { Cron, CronExpression } from '@nestjs/schedule';
 
 interface IResolvableTransaction {
   chainId: number;
@@ -68,7 +69,6 @@ export class V2PoolService
   extends BaseFactoryDeployedContractService
   implements OnModuleInit, OnModuleDestroy
 {
-  private sequenceEv: boolean = false;
   private poolEvents = {
     MINT: keccak256('Mint(address,uint256,uint256)'),
     SYNC: keccak256('Sync(uint256,uint256)'),
@@ -110,13 +110,9 @@ export class V2PoolService
 
   async onModuleInit() {
     await this.initializeWatchedAddresses();
-
-    this.sequenceEv = true;
-    this.sequenceAllChains();
   }
 
   onModuleDestroy() {
-    this.sequenceEv = false;
     this.WATCHED_ADDRESSES.clear();
     this.WATCHED_ADDRESSES_CHAINS.clear();
   }
@@ -132,27 +128,25 @@ export class V2PoolService
     });
   }
 
-  private sequenceAllChains() {
+  @Cron(CronExpression.EVERY_10_SECONDS)
+  async sequenceAllChains() {
     const chainIds = Array.from(new Set(this.WATCHED_ADDRESSES_CHAINS.values()));
     for (const chainId of chainIds) {
-      void this.sequenceChainEvents(chainId);
-      this.isChainTracked[chainId] = true;
+      await this.sequenceChainEvents(chainId);
     }
   }
 
   private async sequenceChainEvents(chainId: number) {
-    while (this.sequenceEv) {
-      try {
-        await this.waitFor(4000);
-        void this.handleEvents(chainId);
-        void this.resolveTransactionsForChain(chainId);
-      } catch (error: any) {
-        this.logger.error(
-          `[Chain: ${chainId}] Global sequencing error → ${error.message}`,
-          error.stack,
-        );
-        await this.waitFor(5000);
-      }
+    try {
+      await this.waitFor(4000);
+      await this.handleEvents(chainId);
+      await this.resolveTransactionsForChain(chainId);
+    } catch (error: any) {
+      this.logger.error(
+        `[Chain: ${chainId}] Global sequencing error → ${error.message}`,
+        error.stack,
+      );
+      await this.waitFor(5000);
     }
   }
 
@@ -425,11 +419,6 @@ export class V2PoolService
     for (const eventName of events) {
       this.EVENT_TRACK_START_BLOCK[eventName] = payload.block;
       void this.getIndexerEventStatus(payload.address.toLowerCase(), eventName, payload.chainId);
-    }
-
-    if (!this.isChainTracked[payload.chainId]) {
-      this.isChainTracked[payload.chainId] = true;
-      void this.sequenceChainEvents(payload.chainId);
     }
   }
 
