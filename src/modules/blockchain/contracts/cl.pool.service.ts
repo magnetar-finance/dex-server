@@ -131,7 +131,7 @@ export class CLPoolService
       try {
         void this.handleEvents(chainId);
         void this.resolveTransactionsForChain(chainId);
-        void this.waitFor(2000);
+        await this.waitFor(2000);
       } catch (error: any) {
         this.logger.error(
           `[Chain: ${chainId}] Global CL sequencing error → ${error.message}`,
