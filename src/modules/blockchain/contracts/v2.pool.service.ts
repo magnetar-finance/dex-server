@@ -178,6 +178,10 @@ export class V2PoolService
           let blockEnd = blockStart + (rpcInfo.queryBlockRange || DEFAULT_BLOCK_RANGE);
           blockEnd = Math.min(lastBlockNumber, blockEnd);
 
+          this.logger.debug(
+            `[Chain: ${chainId}] Querying ${rpcInfo.url} for ${eventHash} within range ${blockStart} - ${blockEnd}`,
+          );
+
           return provider.getLogs({
             fromBlock: blockStart,
             toBlock: blockEnd,
