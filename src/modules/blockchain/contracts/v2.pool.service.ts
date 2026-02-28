@@ -193,6 +193,8 @@ export class V2PoolService
           const parsedLog = contractInterface.parseLog(log);
           if (!parsedLog) continue;
 
+          this.logger.log(`[Chain: ${chainId}] Sequencing ${eventHash} on pool ${poolAddress}`);
+
           await this.processEvent(eventHash, poolAddress, chainId, log, parsedLog.args);
         }
 
@@ -207,6 +209,10 @@ export class V2PoolService
         );
         await this.indexerEventStatusRepository.save(indexerEventStatus);
       }
+    } catch (error: any) {
+      this.logger.error(
+        `[Chain: ${chainId}] Error occurred while sequencing event: ${error.stack}`,
+      );
     } finally {
       await this.releaseResource(chainId);
     }
