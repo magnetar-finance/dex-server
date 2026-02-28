@@ -143,9 +143,9 @@ export class V2PoolService
   private async sequenceChainEvents(chainId: number) {
     while (this.sequenceEv) {
       try {
+        await this.waitFor(4000);
         void this.handleEvents(chainId);
         void this.resolveTransactionsForChain(chainId);
-        await this.waitFor(2000); // Poll every 2 seconds
       } catch (error: any) {
         this.logger.error(
           `[Chain: ${chainId}] Global sequencing error → ${error.message}`,
