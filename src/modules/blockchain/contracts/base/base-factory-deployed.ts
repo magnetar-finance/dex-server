@@ -11,7 +11,7 @@ export abstract class BaseFactoryDeployedContractService extends BaseService {
   protected readonly logger = new Logger(BaseFactoryDeployedContractService.name);
   protected readonly WATCHED_ADDRESSES: Set<string> = new Set();
   protected readonly WATCHED_ADDRESSES_CHAINS: Map<string, number> = new Map();
-  protected readonly ADDRESS_DEPLOYMENT_BLOCK: Record<string, number> = {};
+  protected readonly EVENT_TRACK_START_BLOCK: Record<string, number> = {};
 
   constructor(
     chainConnectionInfos: ChainConnectionInfo[],
@@ -22,19 +22,19 @@ export abstract class BaseFactoryDeployedContractService extends BaseService {
     super(chainConnectionInfos, cacheService, indexerEventStatusRepository, statisticsRepository);
   }
 
-  protected async getIndexerEventStatus(address: string, eventName: string, chainId: number) {
-    const contractAddress = address.toLowerCase();
+  protected async getIndexerEventStatus(identifier: string, eventName: string, chainId: number) {
+    identifier = identifier.toLowerCase();
     // Find status
-    const statusId = `${eventName}-${contractAddress}:${chainId}`;
+    const statusId = `${eventName}-${identifier}:${chainId}`;
     let indexerEventStatus = await this.indexerEventStatusRepository.findOneBy({
       id: statusId,
     });
     if (indexerEventStatus === null) {
-      const lastBlockNumber = this.ADDRESS_DEPLOYMENT_BLOCK[contractAddress] || DEFAULT_BLOCK_START;
+      const lastBlockNumber = this.EVENT_TRACK_START_BLOCK[eventName] || DEFAULT_BLOCK_START;
       indexerEventStatus = this.indexerEventStatusRepository.create({
         eventName,
         chainId,
-        contractAddress,
+        identifier,
         lastBlockNumber,
       });
       indexerEventStatus = await this.indexerEventStatusRepository.save(indexerEventStatus);
