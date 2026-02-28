@@ -256,7 +256,8 @@ export class CLPoolService
     }
 
     if (eventHash === this.poolEvents.MINT) {
-      const resolvableMint: IResolvableCLMintTransaction = {
+      const resolvableMint: IResolvableCLMintTransaction & { poolAddress: string } = {
+        poolAddress: log.address.toLowerCase(),
         to: args.owner,
         amountA: args.amount0.toString(),
         amountB: args.amount1.toString(),
@@ -272,7 +273,8 @@ export class CLPoolService
         JSON.stringify(resolvableMint),
       );
     } else if (eventHash === this.poolEvents.BURN) {
-      const resolvableBurn: IResolvableCLBurnTransaction = {
+      const resolvableBurn: IResolvableCLBurnTransaction & { poolAddress: string } = {
+        poolAddress: log.address.toLowerCase(),
         to: args.owner,
         amountA: args.amount0.toString(),
         amountB: args.amount1.toString(),
@@ -288,7 +290,8 @@ export class CLPoolService
         JSON.stringify(resolvableBurn),
       );
     } else if (eventHash === this.poolEvents.SWAP) {
-      const resolvableSwap: IResolvableCLSwapTransaction = {
+      const resolvableSwap: IResolvableCLSwapTransaction & { poolAddress: string } = {
+        poolAddress: log.address.toLowerCase(),
         from: args.sender,
         to: args.recipient,
         chainId,
@@ -309,41 +312,75 @@ export class CLPoolService
   }
 
   private async resolveTransactionsForChain(chainId: number) {
+    if (!this.cacheService.isConnected()) return;
+
+    // Fetch all cached transactions once per chain
+    const cachedMints = await this.cacheService.hObtainAll('cl-mint');
+    const cachedBurns = await this.cacheService.hObtainAll('cl-burn');
+    const cachedSwaps = await this.cacheService.hObtainAll('cl-swap');
+
+    // Collect all watched addresses for this chain
     const addresses = Array.from(this.WATCHED_ADDRESSES).filter(
       (addr) => this.WATCHED_ADDRESSES_CHAINS.get(addr) === chainId,
     );
+
     for (const address of addresses) {
-      await this.resolveTransactions(address, chainId);
+      await this.resolveTransactions(
+        address,
+        chainId,
+        cachedMints,
+        cachedBurns,
+        cachedSwaps,
+      );
     }
   }
 
-  private async resolveTransactions(address: string, chainId: number) {
-    if (!this.cacheService.isConnected()) return;
-
+  private async resolveTransactions(
+    address: string,
+    chainId: number,
+    mints: Record<string, string>,
+    burns: Record<string, string>,
+    swaps: Record<string, string>,
+  ) {
     this.logger.log(`[Chain: ${chainId}] Attempting CL transaction resolutions for ${address}...`);
 
-    const cachedMints = await this.cacheService.hObtainAll('cl-mint');
-    for (const [hash, stringValue] of Object.entries(cachedMints)) {
-      const resolvableMint: IResolvableCLMintTransaction = JSON.parse(stringValue);
-      if (resolvableMint.chainId === chainId) {
+    for (const [hash, stringValue] of Object.entries(mints)) {
+      const resolvableMint = JSON.parse(stringValue) as IResolvableCLMintTransaction & {
+        poolAddress?: string;
+      };
+      if (
+        resolvableMint.chainId === chainId &&
+        (!resolvableMint.poolAddress ||
+          resolvableMint.poolAddress.toLowerCase() === address.toLowerCase())
+      ) {
         await this.resolveMint(address, chainId, resolvableMint);
         await this.cacheService.hDecache('cl-mint', hash);
       }
     }
 
-    const cachedBurns = await this.cacheService.hObtainAll('cl-burn');
-    for (const [hash, stringValue] of Object.entries(cachedBurns)) {
-      const resolvableBurn: IResolvableCLBurnTransaction = JSON.parse(stringValue);
-      if (resolvableBurn.chainId === chainId) {
+    for (const [hash, stringValue] of Object.entries(burns)) {
+      const resolvableBurn = JSON.parse(stringValue) as IResolvableCLBurnTransaction & {
+        poolAddress?: string;
+      };
+      if (
+        resolvableBurn.chainId === chainId &&
+        (!resolvableBurn.poolAddress ||
+          resolvableBurn.poolAddress.toLowerCase() === address.toLowerCase())
+      ) {
         await this.resolveBurn(address, chainId, resolvableBurn);
         await this.cacheService.hDecache('cl-burn', hash);
       }
     }
 
-    const cachedSwaps = await this.cacheService.hObtainAll('cl-swap');
-    for (const [hash, stringValue] of Object.entries(cachedSwaps)) {
-      const resolvableSwap: IResolvableCLSwapTransaction = JSON.parse(stringValue);
-      if (resolvableSwap.chainId === chainId) {
+    for (const [hash, stringValue] of Object.entries(swaps)) {
+      const resolvableSwap = JSON.parse(stringValue) as IResolvableCLSwapTransaction & {
+        poolAddress?: string;
+      };
+      if (
+        resolvableSwap.chainId === chainId &&
+        (!resolvableSwap.poolAddress ||
+          resolvableSwap.poolAddress.toLowerCase() === address.toLowerCase())
+      ) {
         await this.resolveSwap(address, chainId, resolvableSwap);
         await this.cacheService.hDecache('cl-swap', hash);
       }

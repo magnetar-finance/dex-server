@@ -365,12 +365,34 @@ export class V2PoolService
   }
 
   private async resolveTransactionsForChain(chainId: number) {
+    if (!this.cacheService.isConnected()) return;
+
+    // Fetch all cached transactions once per chain
+    const cachedTransfers = await this.cacheService.hObtainAll('transfer');
+    const cachedSwaps = await this.cacheService.hObtainAll('swap');
+
+    // Filter transfers for this chain once
+    const filteredTransfers = Object.values(cachedTransfers)
+      .map((transfer) => JSON.parse(transfer) as IResolvableTransferTransaction)
+      .filter((transfer) => transfer.chainId === chainId);
+
+    // Filter swaps for this chain once
+    const filteredSwaps = Object.entries(cachedSwaps)
+      .map(([hash, stringValue]) => ({
+        hash,
+        data: JSON.parse(stringValue) as IResolvableSwapTransaction,
+      }))
+      .filter((swap) => swap.data.chainId === chainId);
+
+    if (filteredTransfers.length === 0 && filteredSwaps.length === 0) return;
+
     // Collect all watched addresses for this chain
     const addresses = Array.from(this.WATCHED_ADDRESSES).filter(
       (addr) => this.WATCHED_ADDRESSES_CHAINS.get(addr) === chainId,
     );
+
     for (const address of addresses) {
-      await this.resolveTransactions(address, chainId);
+      await this.resolveTransactions(address, chainId, filteredTransfers, filteredSwaps);
     }
   }
 
@@ -392,22 +414,21 @@ export class V2PoolService
     }
   }
 
-  private async resolveTransactions(address: string, chainId: number) {
-    if (!this.cacheService.isConnected()) return; // Cache must be connected
-
+  private async resolveTransactions(
+    address: string,
+    chainId: number,
+    transfers: IResolvableTransferTransaction[],
+    swaps: { hash: string; data: IResolvableSwapTransaction }[],
+  ) {
     this.logger.log(`[Chain: ${chainId}] Attempting V2 transaction resolutions for ${address}...`);
 
-    const cachedTransfers = await this.cacheService.hObtainAll('transfer');
     // Find cached transfers matching parameters
-    const filteredTransfers = Object.values(cachedTransfers)
-      .map((transfer) => JSON.parse(transfer) as IResolvableTransferTransaction)
-      .filter(
-        (transfer) =>
-          transfer.chainId === chainId && transfer.token.toLowerCase() === address.toLowerCase(),
-      );
+    const poolTransfers = transfers.filter(
+      (transfer) => transfer.token.toLowerCase() === address.toLowerCase(),
+    );
 
     // Find equivalent mints or burns
-    for (const transfer of filteredTransfers) {
+    for (const transfer of poolTransfers) {
       const resolvableMint = await this.cacheService.hObtain<IResolvableMintTransaction>(
         'mint',
         transfer.hash,
@@ -431,12 +452,14 @@ export class V2PoolService
       }
     }
 
-    const cachedSwaps = await this.cacheService.hObtainAll('swap');
+    // Find cached swaps matching parameters
+    const poolSwaps = swaps.filter(
+      (swap) => swap.data.token.toLowerCase() === address.toLowerCase(),
+    );
 
-    for (const [hash, stringValue] of Object.entries(cachedSwaps)) {
-      const resolvableSwap: IResolvableSwapTransaction = JSON.parse(stringValue);
-      await this.resolveSwap(resolvableSwap);
-      await this.cacheService.hDecache('swap', hash);
+    for (const swap of poolSwaps) {
+      await this.resolveSwap(swap.data);
+      await this.cacheService.hDecache('swap', swap.hash);
     }
   }
 
