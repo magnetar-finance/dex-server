@@ -385,7 +385,7 @@ export class V2PoolService
   private async resolveTransactions(address: string, chainId: number) {
     if (!this.cacheService.isConnected()) return; // Cache must be connected
 
-    this.logger.log(`Attempting transaction resolutions...`);
+    this.logger.log(`[Chain: ${chainId}] Attempting V2 transaction resolutions for ${address}...`);
 
     const cachedTransfers = await this.cacheService.hObtainAll('transfer');
     // Find cached transfers matching parameters

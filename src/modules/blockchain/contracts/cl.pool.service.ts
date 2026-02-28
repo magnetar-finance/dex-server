@@ -316,7 +316,7 @@ export class CLPoolService
   private async resolveTransactions(address: string, chainId: number) {
     if (!this.cacheService.isConnected()) return;
 
-    this.logger.log(`Attempting CL transaction resolutions for ${address}...`);
+    this.logger.log(`[Chain: ${chainId}] Attempting CL transaction resolutions for ${address}...`);
 
     const cachedMints = await this.cacheService.hObtainAll('cl-mint');
     for (const [hash, stringValue] of Object.entries(cachedMints)) {
