@@ -52,6 +52,7 @@ export class IndexerService implements OnModuleInit, OnModuleDestroy {
       await this.v2FactoryService.handlePoolCreated(chainId);
       await this.clFactoryService.handlePoolCreated(chainId);
       await this.nfpmService.handleTransfer(chainId);
+      await this.nfpmService.resolveTransfers(chainId);
       await this.waitFor(2000); // Add backoff to prevent tight loop
     }
   }

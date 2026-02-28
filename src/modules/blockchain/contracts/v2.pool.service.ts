@@ -201,7 +201,10 @@ export class V2PoolService
         // Update status after processing the chunk
         const processedMaxBlock =
           logData.length > 0
-            ? Math.max(...logData.map((l) => l.blockNumber))
+            ? logData.reduce(
+                (max, l) => (l.blockNumber > max ? l.blockNumber : max),
+                logData[0].blockNumber,
+              )
             : indexerEventStatus.lastBlockNumber;
         indexerEventStatus.lastBlockNumber = Math.max(
           indexerEventStatus.lastBlockNumber,
@@ -925,7 +928,7 @@ export class V2PoolService
   }
 
   private async updatePoolHourData(timestamp: number, poolAddress: string) {
-    const hourIndex = timestamp / 3600;
+    const hourIndex = Math.floor(timestamp / 3600);
     const hourStartUnix = hourIndex * 3600;
     const hourPoolId = `${poolAddress}-${hourIndex.toString()}`;
     const pool = await this.poolRepository.findOneByOrFail({

@@ -203,7 +203,10 @@ export class CLPoolService
 
         const processedMaxBlock =
           logData.length > 0
-            ? Math.max(...logData.map((l) => l.blockNumber))
+            ? logData.reduce(
+                (max, l) => (l.blockNumber > max ? l.blockNumber : max),
+                logData[0].blockNumber,
+              )
             : indexerEventStatus.lastBlockNumber;
         indexerEventStatus.lastBlockNumber = Math.max(
           indexerEventStatus.lastBlockNumber,

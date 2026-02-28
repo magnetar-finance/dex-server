@@ -28,8 +28,6 @@ export class NFPMContractService
   extends BaseFactoryContractService
   implements OnModuleInit, OnModuleDestroy
 {
-  private resolveTxs: boolean = false;
-
   constructor(
     @Inject(CONNECTION_INFO) connectionInfo: ChainConnectionInfo[],
     cacheService: CacheService,
@@ -47,18 +45,9 @@ export class NFPMContractService
   onModuleInit() {
     this.initializeContracts();
     this.initializeStartBlocks();
-
-    this.resolveTxs = true;
-    void this.resolveTransactions();
-
-    process.on('SIGINT', () => {
-      this.resolveTxs = false;
-    });
   }
 
-  onModuleDestroy() {
-    this.resolveTxs = false;
-  }
+  onModuleDestroy() {}
 
   private initializeContracts() {
     this.CONTRACT_ADDRESSES = {
@@ -169,25 +158,25 @@ export class NFPMContractService
     await this.releaseResource(chainId);
   }
 
-  private async resolveTransactions() {
-    while (this.resolveTxs) {
-      if (!this.cacheService.isConnected()) {
-        await this.waitFor(2000);
-        continue;
-      }
+  async resolveTransfers(chainId: number) {
+    if (!this.cacheService.isConnected()) return;
 
-      await this.resolveTransfers();
-      await this.waitFor(2000); // Add backoff to prevent event loop exhaustion
-    }
-  }
-
-  private async resolveTransfers() {
     try {
       const transfers = await this.cacheService.hObtainAll('nfpm-token-transfer');
       for (const [tId, entry] of Object.entries(transfers)) {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const resolvableTransfer: IResolvableTransfer = JSON.parse(entry);
-        const { chainId, tokenId, to, blockNumber, transactionHash } = resolvableTransfer;
+        const {
+          chainId: entryChainId,
+          tokenId,
+          to,
+          blockNumber,
+          transactionHash,
+        } = resolvableTransfer;
+
+        // Skip entries that don't belong to the current chain
+        if (entryChainId !== chainId) continue;
+
         await this.haltUntilOpen(chainId);
 
         const connectionInfo = this.getConnectionInfo(chainId);
