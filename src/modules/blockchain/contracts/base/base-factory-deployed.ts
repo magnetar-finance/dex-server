@@ -12,6 +12,7 @@ export abstract class BaseFactoryDeployedContractService extends BaseService {
   protected readonly WATCHED_ADDRESSES: Set<string> = new Set();
   protected readonly WATCHED_ADDRESSES_CHAINS: Map<string, number> = new Map();
   protected readonly EVENT_TRACK_START_BLOCK: Record<string, number> = {};
+  protected readonly isChainTracked: Record<number, boolean> = {};
 
   constructor(
     chainConnectionInfos: ChainConnectionInfo[],
