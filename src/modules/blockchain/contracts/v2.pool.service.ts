@@ -159,6 +159,8 @@ export class V2PoolService
     if (!this.cacheService.isConnected()) return;
     await this.haltUntilOpen(chainId);
 
+    this.logger.log(`[Chain: ${chainId}]: Processing V2 pool events`);
+
     try {
       const lastBlockNumber = await this.getLatestBlockNumber(chainId);
       if (typeof lastBlockNumber === 'undefined') return;
