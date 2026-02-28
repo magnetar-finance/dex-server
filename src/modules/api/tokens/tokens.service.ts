@@ -4,7 +4,7 @@ import { Pool } from '../../database/entities/pool.entity';
 import { Transaction } from '../../database/entities/transaction.entity';
 import { Token } from '../../database/entities/token.entity';
 import { TokenDayData } from '../../database/entities/token-day-data.entity';
-import { And, ILike, LessThanOrEqual, MoreThanOrEqual, Repository } from 'typeorm';
+import { And, Equal, ILike, LessThanOrEqual, MoreThanOrEqual, Repository } from 'typeorm';
 
 @Injectable()
 export class TokensService {
@@ -17,10 +17,12 @@ export class TokensService {
   ) {}
 
   async getSingleToken(tokenIdOrAddress: string) {
-    const token = await this.tokenRepository.findOneBy([
-      { id: ILike(`%${tokenIdOrAddress}%`) },
-      { address: ILike(`%${tokenIdOrAddress}%`) },
-    ]);
+    const isAddress = tokenIdOrAddress.length === 42;
+    const whereCondition = isAddress
+      ? [{ id: ILike(`%${tokenIdOrAddress}%`) }, { address: Equal(tokenIdOrAddress.toLowerCase()) }]
+      : [{ id: ILike(`%${tokenIdOrAddress}%`) }, { address: ILike(`%${tokenIdOrAddress}%`) }];
+
+    const token = await this.tokenRepository.findOneBy(whereCondition);
 
     if (token === null) throw new NotFoundException('Token was not found');
     return token;
@@ -30,22 +32,21 @@ export class TokensService {
     page = page - 1;
     const offset = page * limit;
 
+    const isAddress = tokenIdOrAddress.length === 42;
+    const tokenCondition = isAddress
+      ? [{ id: ILike(`%${tokenIdOrAddress}%`) }, { address: Equal(tokenIdOrAddress.toLowerCase()) }]
+      : [{ id: ILike(`%${tokenIdOrAddress}%`) }, { address: ILike(`%${tokenIdOrAddress}%`) }];
+
     const transactions = await this.transactionRepository.find({
       where: [
         {
           swaps: {
             pool: [
               {
-                token0: [
-                  { id: ILike(`%${tokenIdOrAddress}%`) },
-                  { address: ILike(`%${tokenIdOrAddress}%`) },
-                ],
+                token0: tokenCondition,
               },
               {
-                token1: [
-                  { id: ILike(`%${tokenIdOrAddress}%`) },
-                  { address: ILike(`%${tokenIdOrAddress}%`) },
-                ],
+                token1: tokenCondition,
               },
             ],
           },
@@ -54,16 +55,10 @@ export class TokensService {
           burns: {
             pool: [
               {
-                token0: [
-                  { id: ILike(`%${tokenIdOrAddress}%`) },
-                  { address: ILike(`%${tokenIdOrAddress}%`) },
-                ],
+                token0: tokenCondition,
               },
               {
-                token1: [
-                  { id: ILike(`%${tokenIdOrAddress}%`) },
-                  { address: ILike(`%${tokenIdOrAddress}%`) },
-                ],
+                token1: tokenCondition,
               },
             ],
           },
@@ -72,16 +67,10 @@ export class TokensService {
           mints: {
             pool: [
               {
-                token0: [
-                  { id: ILike(`%${tokenIdOrAddress}%`) },
-                  { address: ILike(`%${tokenIdOrAddress}%`) },
-                ],
+                token0: tokenCondition,
               },
               {
-                token1: [
-                  { id: ILike(`%${tokenIdOrAddress}%`) },
-                  { address: ILike(`%${tokenIdOrAddress}%`) },
-                ],
+                token1: tokenCondition,
               },
             ],
           },
@@ -101,21 +90,20 @@ export class TokensService {
   }
 
   async getTokenTopPools(tokenIdOrAddress: string, limit: number = 20) {
+    const isAddress = tokenIdOrAddress.length === 42;
+    const tokenCondition = isAddress
+      ? [{ id: ILike(`%${tokenIdOrAddress}%`) }, { address: Equal(tokenIdOrAddress.toLowerCase()) }]
+      : [{ id: ILike(`%${tokenIdOrAddress}%`) }, { address: ILike(`%${tokenIdOrAddress}%`) }];
+
     return this.poolRepository.find({
       take: limit,
       order: { reserveUSD: 'DESC' },
       where: [
         {
-          token0: [
-            { id: ILike(`%${tokenIdOrAddress}%`) },
-            { address: ILike(`%${tokenIdOrAddress}%`) },
-          ],
+          token0: tokenCondition,
         },
         {
-          token1: [
-            { id: ILike(`%${tokenIdOrAddress}%`) },
-            { address: ILike(`%${tokenIdOrAddress}%`) },
-          ],
+          token1: tokenCondition,
         },
       ],
     });
@@ -136,12 +124,14 @@ export class TokensService {
     const startHourUnix = Math.floor(startHour.getTime() / 1000);
     const endHourUnix = Math.floor(endHour.getTime() / 1000);
 
+    const isAddress = tokenIdOrAddress.length === 42;
+    const tokenCondition = isAddress
+      ? [{ id: ILike(`%${tokenIdOrAddress}%`) }, { address: Equal(tokenIdOrAddress.toLowerCase()) }]
+      : [{ id: ILike(`%${tokenIdOrAddress}%`) }, { address: ILike(`%${tokenIdOrAddress}%`) }];
+
     return this.tokenDayDataRepository.find({
       where: {
-        token: [
-          { id: ILike(`%${tokenIdOrAddress}%`) },
-          { address: ILike(`%${tokenIdOrAddress}%`) },
-        ],
+        token: tokenCondition,
         date: And(MoreThanOrEqual(startHourUnix), LessThanOrEqual(endHourUnix)),
       },
     });

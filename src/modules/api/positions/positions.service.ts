@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { LiquidityPosition } from '../../../modules/database/entities/lp-position.entity';
-import { ILike, Repository } from 'typeorm';
+import { Equal, ILike, Repository } from 'typeorm';
 import { CacheService } from '../../../modules/cache/cache.service';
 
 @Injectable()
@@ -15,9 +15,15 @@ export class PositionsService {
   getLiquidityPositions(account: string, chainId?: number, page: number = 1, limit: number = 20) {
     page = page - 1;
     const offset = page * limit;
+
+    const isAddress = account.length === 42;
+    const accountCondition = isAddress
+      ? [{ id: ILike(`%${account}%`) }, { address: Equal(account.toLowerCase()) }]
+      : [{ id: ILike(`%${account}%`) }, { address: ILike(`%${account}%`) }];
+
     return this.liquidityPositionRepository.find({
       where: {
-        account: [{ id: ILike(`%${account}%`) }, { address: ILike(`%${account}%`) }],
+        account: accountCondition,
         chainId,
       },
       skip: offset,
@@ -27,10 +33,15 @@ export class PositionsService {
   }
 
   async getPositionStats(account: string, chainId?: number) {
+    const isAddress = account.length === 42;
+    const accountCondition = isAddress
+      ? [{ id: ILike(`%${account}%`) }, { address: Equal(account.toLowerCase()) }]
+      : [{ id: ILike(`%${account}%`) }, { address: ILike(`%${account}%`) }];
+
     const [positions, positionsCount] = await this.liquidityPositionRepository.findAndCount({
       where: {
         chainId,
-        account: [{ id: ILike(`%${account}%`) }, { address: ILike(`%${account}%`) }],
+        account: accountCondition,
       },
       relations: { pool: true },
     });

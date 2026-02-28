@@ -32,6 +32,6 @@ export class GeneralAnalyticsController {
   @Get('transactions/all')
   @HttpCode(HttpStatus.OK)
   getAllTransactions(@Query() query: SharedQuerySchema) {
-    return this.generalAnalyticsService.getAllTransactions(query.chainId, query.limit);
+    return this.generalAnalyticsService.getAllTransactions(query.chainId, query.page, query.limit);
   }
 }

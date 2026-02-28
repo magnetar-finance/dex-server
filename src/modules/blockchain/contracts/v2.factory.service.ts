@@ -48,7 +48,7 @@ export class V2FactoryService extends BaseFactoryContractService implements OnMo
     this.START_BLOCKS = {
       [ChainIds.DUSK_TESTNET]: 1994510,
       [ChainIds.PHAROS_TESTNET]: 14364409,
-      [ChainIds.SEISMIC_TESTNET]: 18979337,
+      [ChainIds.SEISMIC_TESTNET]: 19733040,
     };
   }
 
@@ -208,6 +208,8 @@ export class V2FactoryService extends BaseFactoryContractService implements OnMo
           chainId,
         });
       }
+
+      await this.indexerEventStatusRepository.save(indexerEventStatus);
     } catch (error: any) {
       this.logger.error(
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
@@ -215,10 +217,8 @@ export class V2FactoryService extends BaseFactoryContractService implements OnMo
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         error.stack,
       );
-      return;
+    } finally {
+      await this.releaseResource(chainId);
     }
-
-    await this.indexerEventStatusRepository.save(indexerEventStatus);
-    await this.releaseResource(chainId);
   }
 }

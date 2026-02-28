@@ -8,6 +8,13 @@ import { Erc20__factory, Oracle__factory } from '../typechain';
 export class OracleService implements OnModuleInit {
   protected CONTRACT_ADDRESSES: { [key: number]: string };
   private readonly connectionsMap: Map<number, ChainConnectionInfo> = new Map();
+  private readonly erc20MetadataCache: Map<
+    string,
+    { decimals: number; symbol: string; name: string }
+  > = new Map();
+  private readonly priceCache: Map<string, { price: number; timestamp: number }> = new Map();
+  private readonly PRICE_CACHE_TTL = 30000; // 30 seconds
+
   constructor(
     @Inject(CONNECTION_INFO)
     private readonly chainConnectionInfos: ChainConnectionInfo[],
@@ -45,6 +52,10 @@ export class OracleService implements OnModuleInit {
   }
 
   private async getERC20Metadata(address: string, chainId: number) {
+    const cacheKey = `${address.toLowerCase()}-${chainId}`;
+    const cachedMetadata = this.erc20MetadataCache.get(cacheKey);
+    if (cachedMetadata) return cachedMetadata;
+
     const connectionInfo = this.getConnectionInfo(chainId);
     const promises = connectionInfo.rpcInfos.map(async (rpcInfo) => {
       const provider = this.provider(rpcInfo, chainId);
@@ -55,14 +66,23 @@ export class OracleService implements OnModuleInit {
     });
 
     const [decimals, symbol, name] = await Promise.any(promises);
-    return {
+    const metadata = {
       decimals: parseInt(decimals.toString()),
       symbol,
       name,
     };
+
+    this.erc20MetadataCache.set(cacheKey, metadata);
+    return metadata;
   }
 
   async getPriceInUSD(token: string, chainId: number) {
+    const cacheKey = `usd-${token.toLowerCase()}-${chainId}`;
+    const cached = this.priceCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < this.PRICE_CACHE_TTL) {
+      return cached.price;
+    }
+
     const erc20Metadata = await this.getERC20Metadata(token, chainId);
     const ONE = parseUnits('1', erc20Metadata.decimals);
     const connectionInfo = this.getConnectionInfo(chainId);
@@ -74,10 +94,19 @@ export class OracleService implements OnModuleInit {
     });
 
     const [price] = await Promise.any(promises);
-    return parseFloat(formatUnits(price, 18));
+    const parsedPrice = parseFloat(formatUnits(price, 18));
+
+    this.priceCache.set(cacheKey, { price: parsedPrice, timestamp: Date.now() });
+    return parsedPrice;
   }
 
   async getPriceInETH(token: string, chainId: number) {
+    const cacheKey = `eth-${token.toLowerCase()}-${chainId}`;
+    const cached = this.priceCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < this.PRICE_CACHE_TTL) {
+      return cached.price;
+    }
+
     const erc20Metadata = await this.getERC20Metadata(token, chainId);
     const ONE = parseUnits('1', erc20Metadata.decimals);
     const connectionInfo = this.getConnectionInfo(chainId);
@@ -89,6 +118,9 @@ export class OracleService implements OnModuleInit {
     });
 
     const [price] = await Promise.any(promises);
-    return parseFloat(formatUnits(price, 18));
+    const parsedPrice = parseFloat(formatUnits(price, 18));
+
+    this.priceCache.set(cacheKey, { price: parsedPrice, timestamp: Date.now() });
+    return parsedPrice;
   }
 }
