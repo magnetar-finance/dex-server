@@ -201,8 +201,7 @@ export class V2PoolService
           if (!parsedLog) continue;
 
           this.logger.log(`[Chain: ${chainId}] Sequencing ${eventHash} on pool ${poolAddress}`);
-
-          void this.processEvent(eventHash, poolAddress, chainId, log, parsedLog.args);
+          await this.processEvent(eventHash, poolAddress, chainId, log, parsedLog.args);
         }
 
         // Update status after processing the chunk
@@ -358,10 +357,12 @@ export class V2PoolService
     token1.totalLiquidityETH = token1.totalLiquidity * token1.derivedETH;
     token1.totalLiquidityUSD = token1.totalLiquidity * token1.derivedUSD;
 
-    await this.poolRepository.save(poolEntity);
-    await this.statisticsRepository.save(statistics);
-    await this.tokenRepository.save(token0);
-    await this.tokenRepository.save(token1);
+    await Promise.all([
+      this.poolRepository.save(poolEntity),
+      this.statisticsRepository.save(statistics),
+      this.tokenRepository.save(token0),
+      this.tokenRepository.save(token1),
+    ]);
   }
 
   private async resolveTransactionsForChain(chainId: number) {
@@ -371,28 +372,46 @@ export class V2PoolService
     const cachedTransfers = await this.cacheService.hObtainAll('transfer');
     const cachedSwaps = await this.cacheService.hObtainAll('swap');
 
-    // Filter transfers for this chain once
-    const filteredTransfers = Object.values(cachedTransfers)
-      .map((transfer) => JSON.parse(transfer) as IResolvableTransferTransaction)
-      .filter((transfer) => transfer.chainId === chainId);
+    // Group transfers by token for this chain
+    const transfersByToken: Record<string, IResolvableTransferTransaction[]> = {};
+    for (const transfer of Object.values(cachedTransfers)) {
+      const data = JSON.parse(transfer) as IResolvableTransferTransaction;
+      if (data.chainId === chainId) {
+        const token = data.token.toLowerCase();
+        if (!transfersByToken[token]) transfersByToken[token] = [];
+        transfersByToken[token].push(data);
+      }
+    }
 
-    // Filter swaps for this chain once
-    const filteredSwaps = Object.entries(cachedSwaps)
-      .map(([hash, stringValue]) => ({
-        hash,
-        data: JSON.parse(stringValue) as IResolvableSwapTransaction,
-      }))
-      .filter((swap) => swap.data.chainId === chainId);
+    // Group swaps by token for this chain
+    const swapsByToken: Record<string, { hash: string; data: IResolvableSwapTransaction }[]> = {};
+    for (const [hash, stringValue] of Object.entries(cachedSwaps)) {
+      const data = JSON.parse(stringValue) as IResolvableSwapTransaction;
+      if (data.chainId === chainId) {
+        const token = data.token.toLowerCase();
+        if (!swapsByToken[token]) swapsByToken[token] = [];
+        swapsByToken[token].push({ hash, data });
+      }
+    }
 
-    if (filteredTransfers.length === 0 && filteredSwaps.length === 0) return;
+    // Process only pools that have pending events or are watched
+    const tokensWithEvents = new Set([
+      ...Object.keys(transfersByToken),
+      ...Object.keys(swapsByToken),
+    ]);
 
-    // Collect all watched addresses for this chain
-    const addresses = Array.from(this.WATCHED_ADDRESSES).filter(
-      (addr) => this.WATCHED_ADDRESSES_CHAINS.get(addr) === chainId,
-    );
-
-    for (const address of addresses) {
-      await this.resolveTransactions(address, chainId, filteredTransfers, filteredSwaps);
+    for (const token of tokensWithEvents) {
+      if (
+        this.WATCHED_ADDRESSES.has(token) &&
+        this.WATCHED_ADDRESSES_CHAINS.get(token) === chainId
+      ) {
+        await this.resolveTransactions(
+          token,
+          chainId,
+          transfersByToken[token] || [],
+          swapsByToken[token] || [],
+        );
+      }
     }
   }
 
@@ -797,7 +816,6 @@ export class V2PoolService
     token.derivedUSD = await this.oracle.getPriceInUSD(token.address, token.chainId);
     token.derivedETH = await this.oracle.getPriceInETH(token.address, token.chainId);
 
-    token = await this.tokenRepository.save(token);
     return token;
   }
 

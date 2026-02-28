@@ -209,8 +209,7 @@ export class CLPoolService
           if (!parsedLog) continue;
 
           this.logger.log(`[Chain: ${chainId}] Sequencing ${eventHash} on pool ${poolAddress}`);
-
-          void this.processEvent(eventHash, chainId, log, parsedLog.args);
+          await this.processEvent(eventHash, chainId, log, parsedLog.args);
         }
 
         const processedMaxBlock =
@@ -315,23 +314,74 @@ export class CLPoolService
     if (!this.cacheService.isConnected()) return;
 
     // Fetch all cached transactions once per chain
-    const cachedMints = await this.cacheService.hObtainAll('cl-mint');
-    const cachedBurns = await this.cacheService.hObtainAll('cl-burn');
-    const cachedSwaps = await this.cacheService.hObtainAll('cl-swap');
+    const [cachedMints, cachedBurns, cachedSwaps] = await Promise.all([
+      this.cacheService.hObtainAll('cl-mint'),
+      this.cacheService.hObtainAll('cl-burn'),
+      this.cacheService.hObtainAll('cl-swap'),
+    ]);
 
-    // Collect all watched addresses for this chain
-    const addresses = Array.from(this.WATCHED_ADDRESSES).filter(
-      (addr) => this.WATCHED_ADDRESSES_CHAINS.get(addr) === chainId,
-    );
+    // Group events by poolAddress for this chain
+    const mintsByPool: Record<string, Record<string, string>> = {};
+    for (const [hash, stringValue] of Object.entries(cachedMints)) {
+      const data = JSON.parse(stringValue) as IResolvableCLMintTransaction & {
+        poolAddress?: string;
+      };
+      if (data.chainId === chainId) {
+        const pool = (data.poolAddress || '').toLowerCase();
+        if (pool) {
+          if (!mintsByPool[pool]) mintsByPool[pool] = {};
+          mintsByPool[pool][hash] = stringValue;
+        }
+      }
+    }
 
-    for (const address of addresses) {
-      await this.resolveTransactions(
-        address,
-        chainId,
-        cachedMints,
-        cachedBurns,
-        cachedSwaps,
-      );
+    const burnsByPool: Record<string, Record<string, string>> = {};
+    for (const [hash, stringValue] of Object.entries(cachedBurns)) {
+      const data = JSON.parse(stringValue) as IResolvableCLBurnTransaction & {
+        poolAddress?: string;
+      };
+      if (data.chainId === chainId) {
+        const pool = (data.poolAddress || '').toLowerCase();
+        if (pool) {
+          if (!burnsByPool[pool]) burnsByPool[pool] = {};
+          burnsByPool[pool][hash] = stringValue;
+        }
+      }
+    }
+
+    const swapsByPool: Record<string, Record<string, string>> = {};
+    for (const [hash, stringValue] of Object.entries(cachedSwaps)) {
+      const data = JSON.parse(stringValue) as IResolvableCLSwapTransaction & {
+        poolAddress?: string;
+      };
+      if (data.chainId === chainId) {
+        const pool = (data.poolAddress || '').toLowerCase();
+        if (pool) {
+          if (!swapsByPool[pool]) swapsByPool[pool] = {};
+          swapsByPool[pool][hash] = stringValue;
+        }
+      }
+    }
+
+    const allPoolsWithEvents = new Set([
+      ...Object.keys(mintsByPool),
+      ...Object.keys(burnsByPool),
+      ...Object.keys(swapsByPool),
+    ]);
+
+    for (const poolAddress of allPoolsWithEvents) {
+      if (
+        this.WATCHED_ADDRESSES.has(poolAddress) &&
+        this.WATCHED_ADDRESSES_CHAINS.get(poolAddress) === chainId
+      ) {
+        await this.resolveTransactions(
+          poolAddress,
+          chainId,
+          mintsByPool[poolAddress] || {},
+          burnsByPool[poolAddress] || {},
+          swapsByPool[poolAddress] || {},
+        );
+      }
     }
   }
 
@@ -345,45 +395,30 @@ export class CLPoolService
     this.logger.log(`[Chain: ${chainId}] Attempting CL transaction resolutions for ${address}...`);
 
     for (const [hash, stringValue] of Object.entries(mints)) {
-      const resolvableMint = JSON.parse(stringValue) as IResolvableCLMintTransaction & {
-        poolAddress?: string;
-      };
-      if (
-        resolvableMint.chainId === chainId &&
-        (!resolvableMint.poolAddress ||
-          resolvableMint.poolAddress.toLowerCase() === address.toLowerCase())
-      ) {
-        await this.resolveMint(address, chainId, resolvableMint);
-        await this.cacheService.hDecache('cl-mint', hash);
-      }
+      await this.resolveMint(
+        address,
+        chainId,
+        JSON.parse(stringValue) as IResolvableCLMintTransaction,
+      );
+      await this.cacheService.hDecache('cl-mint', hash);
     }
 
     for (const [hash, stringValue] of Object.entries(burns)) {
-      const resolvableBurn = JSON.parse(stringValue) as IResolvableCLBurnTransaction & {
-        poolAddress?: string;
-      };
-      if (
-        resolvableBurn.chainId === chainId &&
-        (!resolvableBurn.poolAddress ||
-          resolvableBurn.poolAddress.toLowerCase() === address.toLowerCase())
-      ) {
-        await this.resolveBurn(address, chainId, resolvableBurn);
-        await this.cacheService.hDecache('cl-burn', hash);
-      }
+      await this.resolveBurn(
+        address,
+        chainId,
+        JSON.parse(stringValue) as IResolvableCLBurnTransaction,
+      );
+      await this.cacheService.hDecache('cl-burn', hash);
     }
 
     for (const [hash, stringValue] of Object.entries(swaps)) {
-      const resolvableSwap = JSON.parse(stringValue) as IResolvableCLSwapTransaction & {
-        poolAddress?: string;
-      };
-      if (
-        resolvableSwap.chainId === chainId &&
-        (!resolvableSwap.poolAddress ||
-          resolvableSwap.poolAddress.toLowerCase() === address.toLowerCase())
-      ) {
-        await this.resolveSwap(address, chainId, resolvableSwap);
-        await this.cacheService.hDecache('cl-swap', hash);
-      }
+      await this.resolveSwap(
+        address,
+        chainId,
+        JSON.parse(stringValue) as IResolvableCLSwapTransaction,
+      );
+      await this.cacheService.hDecache('cl-swap', hash);
     }
   }
 
@@ -707,7 +742,6 @@ export class CLPoolService
     token.derivedUSD = await this.oracle.getPriceInUSD(token.address, token.chainId);
     token.derivedETH = await this.oracle.getPriceInETH(token.address, token.chainId);
 
-    token = await this.tokenRepository.save(token);
     return token;
   }
 
