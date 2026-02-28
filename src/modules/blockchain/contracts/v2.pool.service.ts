@@ -202,7 +202,7 @@ export class V2PoolService
 
           this.logger.log(`[Chain: ${chainId}] Sequencing ${eventHash} on pool ${poolAddress}`);
 
-          await this.processEvent(eventHash, poolAddress, chainId, log, parsedLog.args);
+          void this.processEvent(eventHash, poolAddress, chainId, log, parsedLog.args);
         }
 
         // Update status after processing the chunk

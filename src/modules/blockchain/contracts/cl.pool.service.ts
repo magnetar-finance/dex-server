@@ -210,7 +210,7 @@ export class CLPoolService
 
           this.logger.log(`[Chain: ${chainId}] Sequencing ${eventHash} on pool ${poolAddress}`);
 
-          await this.processEvent(eventHash, chainId, log, parsedLog.args);
+          void this.processEvent(eventHash, chainId, log, parsedLog.args);
         }
 
         const processedMaxBlock =
