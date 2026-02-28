@@ -136,6 +136,7 @@ export class V2PoolService
     const chainIds = Array.from(new Set(this.WATCHED_ADDRESSES_CHAINS.values()));
     for (const chainId of chainIds) {
       void this.sequenceChainEvents(chainId);
+      this.isChainTracked[chainId] = true;
     }
   }
 
@@ -381,6 +382,11 @@ export class V2PoolService
   handleV2PoolDeployed(payload: ContractDeployEventPayload) {
     this.WATCHED_ADDRESSES.add(payload.address.toLowerCase());
     this.WATCHED_ADDRESSES_CHAINS.set(payload.address.toLowerCase(), payload.chainId);
+
+    if (!this.isChainTracked[payload.chainId]) {
+      void this.sequenceChainEvents(payload.chainId);
+      this.isChainTracked[payload.chainId] = true;
+    }
 
     const events = Object.values(this.poolEvents);
 
