@@ -143,8 +143,8 @@ export class V2PoolService
   private async sequenceChainEvents(chainId: number) {
     while (this.sequenceEv) {
       try {
-        await this.handleEvents(chainId);
-        await this.resolveTransactionsForChain(chainId);
+        void this.handleEvents(chainId);
+        void this.resolveTransactionsForChain(chainId);
         await this.waitFor(2000); // Poll every 2 seconds
       } catch (error: any) {
         this.logger.error(
@@ -178,10 +178,6 @@ export class V2PoolService
           const blockStart = indexerEventStatus.lastBlockNumber + 1;
           let blockEnd = blockStart + (rpcInfo.queryBlockRange || DEFAULT_BLOCK_RANGE);
           blockEnd = Math.min(lastBlockNumber, blockEnd);
-
-          this.logger.debug(
-            `[Chain: ${chainId}] Querying ${rpcInfo.url} for ${eventHash} within range ${blockStart} - ${blockEnd}`,
-          );
 
           return provider.getLogs({
             fromBlock: blockStart,
