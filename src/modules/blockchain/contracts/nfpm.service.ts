@@ -177,6 +177,7 @@ export class NFPMContractService
       }
 
       await this.resolveTransfers();
+      await this.waitFor(2000); // Add backoff to prevent event loop exhaustion
     }
   }
 
