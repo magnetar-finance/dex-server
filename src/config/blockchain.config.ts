@@ -29,7 +29,7 @@ function loadChainInfo(): ChainConnectionInfo[] {
       rpcInfos: [
         {
           url: 'https://gcp-2.seismictest.net/rpc',
-          queryBlockRange: 30000,
+          queryBlockRange: 4000,
         },
       ],
       chainId: ChainIds.SEISMIC_TESTNET,
