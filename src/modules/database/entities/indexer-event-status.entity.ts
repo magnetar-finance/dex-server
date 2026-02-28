@@ -34,7 +34,7 @@ export class IndexerEventStatus {
   chainId: number;
 
   @Column('varchar', { nullable: false })
-  contractAddress: string;
+  identifier: string;
 
   @VersionColumn()
   version: number;
@@ -47,6 +47,6 @@ export class IndexerEventStatus {
 
   @BeforeInsert()
   preSave() {
-    this.id = `${this.eventName}-${this.contractAddress.toLowerCase()}:${this.chainId}`;
+    this.id = `${this.eventName}-${this.identifier.toLowerCase()}:${this.chainId}`;
   }
 }

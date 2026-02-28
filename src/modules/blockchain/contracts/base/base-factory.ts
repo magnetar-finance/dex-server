@@ -19,9 +19,9 @@ export abstract class BaseFactoryContractService extends BaseService {
   }
 
   protected async getIndexerEventStatus(eventName: string, chainId: number) {
-    const contractAddress = this.CONTRACT_ADDRESSES[chainId].toLowerCase();
+    const identifier = this.CONTRACT_ADDRESSES[chainId].toLowerCase();
     // Find status
-    const statusId = `${eventName}-${contractAddress}:${chainId}`;
+    const statusId = `${eventName}-${identifier}:${chainId}`;
     let indexerEventStatus = await this.indexerEventStatusRepository.findOneBy({
       id: statusId,
     });
@@ -30,7 +30,7 @@ export abstract class BaseFactoryContractService extends BaseService {
       indexerEventStatus = this.indexerEventStatusRepository.create({
         eventName,
         chainId,
-        contractAddress,
+        identifier,
         lastBlockNumber,
       });
       indexerEventStatus = await this.indexerEventStatusRepository.save(indexerEventStatus);

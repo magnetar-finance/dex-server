@@ -379,13 +379,13 @@ export class V2PoolService
 
   @OnEvent(EventTypes.V2_POOL_DEPLOYED)
   handleV2PoolDeployed(payload: ContractDeployEventPayload) {
-    this.ADDRESS_DEPLOYMENT_BLOCK[payload.address] = payload.block;
     this.WATCHED_ADDRESSES.add(payload.address.toLowerCase());
     this.WATCHED_ADDRESSES_CHAINS.set(payload.address.toLowerCase(), payload.chainId);
 
     const events = Object.values(this.poolEvents);
 
     for (const eventName of events) {
+      this.EVENT_TRACK_START_BLOCK[eventName] = payload.block;
       void this.getIndexerEventStatus(payload.address.toLowerCase(), eventName, payload.chainId);
     }
   }

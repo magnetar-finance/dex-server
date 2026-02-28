@@ -143,13 +143,13 @@ export class CLPoolService
 
   @OnEvent(EventTypes.CL_POOL_DEPLOYED)
   handleCLPoolDeployed(payload: ContractDeployEventPayload) {
-    this.ADDRESS_DEPLOYMENT_BLOCK[payload.address] = payload.block;
     this.WATCHED_ADDRESSES.add(payload.address.toLowerCase());
     this.WATCHED_ADDRESSES_CHAINS.set(payload.address.toLowerCase(), payload.chainId);
 
     const events = Object.values(this.poolEvents);
 
     for (const eventName of events) {
+      this.EVENT_TRACK_START_BLOCK[eventName] = payload.block;
       void this.getIndexerEventStatus(payload.address.toLowerCase(), eventName, payload.chainId);
     }
   }
@@ -208,7 +208,7 @@ export class CLPoolService
 
           this.logger.log(`[Chain: ${chainId}] Sequencing ${eventHash} on pool ${poolAddress}`);
 
-          await this.processEvent(eventHash, poolAddress, chainId, log, parsedLog.args);
+          await this.processEvent(eventHash, chainId, log, parsedLog.args);
         }
 
         const processedMaxBlock =
@@ -230,13 +230,7 @@ export class CLPoolService
     }
   }
 
-  private async processEvent(
-    eventHash: string,
-    address: string,
-    chainId: number,
-    log: Log,
-    args: any,
-  ) {
+  private async processEvent(eventHash: string, chainId: number, log: Log, args: any) {
     const connectionInfo = this.getConnectionInfo(chainId);
     const blockPromises = connectionInfo.rpcInfos.map((rpcInfo) => {
       const provider = this.provider(rpcInfo, chainId);
