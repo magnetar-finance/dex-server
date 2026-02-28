@@ -143,8 +143,8 @@ export class V2PoolService
   private async sequenceChainEvents(chainId: number) {
     while (this.sequenceEv) {
       try {
-        await this.handleEvents(chainId);
-        await this.resolveTransactionsForChain(chainId);
+        void this.handleEvents(chainId);
+        void this.resolveTransactionsForChain(chainId);
         await this.waitFor(2000); // Poll every 2 seconds
       } catch (error: any) {
         this.logger.error(
