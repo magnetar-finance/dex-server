@@ -191,6 +191,10 @@ export class CLPoolService
         const logData = await Promise.any(promises);
         const contractInterface = ClPool__factory.createInterface();
 
+        this.logger.log(
+          `[Chain: ${chainId}] ${logData.length} matching logs found for ${eventHash}`,
+        );
+
         for (const log of logData) {
           const poolAddress = log.address.toLowerCase();
           if (!this.WATCHED_ADDRESSES.has(poolAddress)) continue;
