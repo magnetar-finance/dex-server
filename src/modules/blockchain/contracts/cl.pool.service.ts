@@ -138,15 +138,15 @@ export class CLPoolService
 
   @OnEvent(EventTypes.CL_POOL_DEPLOYED)
   handleCLPoolDeployed(payload: ContractDeployEventPayload) {
-    this.WATCHED_ADDRESSES.add(payload.address.toLowerCase());
-    this.WATCHED_ADDRESSES_CHAINS.set(payload.address.toLowerCase(), payload.chainId);
-
     const events = Object.values(this.poolEvents);
 
     for (const eventName of events) {
       this.EVENT_TRACK_START_BLOCK[eventName] = payload.block;
       void this.getIndexerEventStatus(payload.address.toLowerCase(), eventName, payload.chainId);
     }
+
+    this.WATCHED_ADDRESSES.add(payload.address.toLowerCase());
+    this.WATCHED_ADDRESSES_CHAINS.set(payload.address.toLowerCase(), payload.chainId);
   }
 
   private async handleEvents(chainId: number) {
