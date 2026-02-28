@@ -7,7 +7,7 @@ import { IndexerEventStatus } from '../../database/entities/indexer-event-status
 import { CacheService } from '../../cache/cache.service';
 import { Pool, PoolType } from '../../database/entities/pool.entity';
 import { Statistics } from '../../database/entities/statistics.entity';
-import { ILike, Repository } from 'typeorm';
+import { Equal, ILike, Repository } from 'typeorm';
 import { Nfpm, Nfpm__factory } from './typechain';
 import { formatUnits, JsonRpcProvider, ZeroAddress } from 'ethers';
 import { User } from '../../database/entities/user.entity';
@@ -72,7 +72,7 @@ export class NFPMContractService
     this.START_BLOCKS = {
       [ChainIds.DUSK_TESTNET]: 1994510,
       [ChainIds.PHAROS_TESTNET]: 14364409,
-      [ChainIds.SEISMIC_TESTNET]: 18979337,
+      [ChainIds.SEISMIC_TESTNET]: 19733040,
     };
   }
 
@@ -197,9 +197,19 @@ export class NFPMContractService
         });
         await this.waitFor(500);
         const position = await Promise.any(positionPromises);
+        const isToken0Address = position.token0.length === 42;
+        const token0Condition = isToken0Address
+          ? { address: Equal(position.token0.toLowerCase()) }
+          : { address: ILike(`%${position.token0}%`) };
+
+        const isToken1Address = position.token1.length === 42;
+        const token1Condition = isToken1Address
+          ? { address: Equal(position.token1.toLowerCase()) }
+          : { address: ILike(`%${position.token1}%`) };
+
         const pool = await this.poolRepository.findOneBy({
-          token0: { address: ILike(`%${position.token0}%`) },
-          token1: { address: ILike(`%${position.token1}%`) },
+          token0: token0Condition,
+          token1: token1Condition,
           tickSpacing: parseInt(position.tickSpacing.toString()),
           poolType: PoolType.CONCENTRATED,
         });

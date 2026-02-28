@@ -1,3 +1,7 @@
+/* eslint-disable @typescript-eslint/no-unsafe-call */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+import { id as keccak256, type Log } from 'ethers';
 import { Inject, Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { BaseFactoryDeployedContractService } from './base/base-factory-deployed';
 import { CONNECTION_INFO, DEFAULT_BLOCK_RANGE } from '../../../common/variables';
@@ -6,12 +10,12 @@ import { CacheService } from '../../cache/cache.service';
 import { IndexerEventStatus } from '../../database/entities/indexer-event-status.entity';
 import { Pool, PoolType } from '../../database/entities/pool.entity';
 import { Token } from '../../database/entities/token.entity';
-import { ILike, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import { ChainConnectionInfo } from '../interfaces';
 import { OnEvent } from '@nestjs/event-emitter';
 import { type ContractDeployEventPayload, EventTypes } from './types';
-import { ClPool, ClPool__factory } from './typechain';
-import { formatEther, formatUnits, JsonRpcProvider } from 'ethers';
+import { ClPool__factory } from './typechain';
+import { formatEther, formatUnits } from 'ethers';
 import { Transaction } from '../../database/entities/transaction.entity';
 import { Mint } from '../../database/entities/mint.entity';
 import { Burn } from '../../database/entities/burn.entity';
@@ -23,12 +27,45 @@ import { OverallDayData } from '../../database/entities/overall-day-data.entity'
 import { Statistics } from '../../database/entities/statistics.entity';
 import { TokenDayData } from '../../database/entities/token-day-data.entity';
 
+interface IResolvableCLTransaction {
+  chainId: number;
+  hash: string;
+  logIndex: number;
+  sender: string;
+}
+
+interface IResolvableCLMintTransaction extends IResolvableCLTransaction {
+  amountA: string;
+  amountB: string;
+  mintValue: string;
+  to: string;
+}
+
+interface IResolvableCLBurnTransaction extends IResolvableCLTransaction {
+  amountA: string;
+  amountB: string;
+  burnValue: string;
+  to: string;
+}
+
+interface IResolvableCLSwapTransaction extends IResolvableCLTransaction {
+  from: string;
+  to: string;
+  amountA: string;
+  amountB: string;
+}
+
 @Injectable()
 export class CLPoolService
   extends BaseFactoryDeployedContractService
   implements OnModuleInit, OnModuleDestroy
 {
   private sequenceEv: boolean = false;
+  private poolEvents = {
+    MINT: keccak256('Mint(address,address,int24,int24,uint128,uint256,uint256)'),
+    BURN: keccak256('Burn(address,int24,int24,uint128,uint256,uint256)'),
+    SWAP: keccak256('Swap(address,address,int256,int256,uint160,uint128,int24)'),
+  };
 
   constructor(
     @Inject(CONNECTION_INFO) connectionInfo: ChainConnectionInfo[],
@@ -61,12 +98,7 @@ export class CLPoolService
     await this.initializeWatchedAddresses();
 
     this.sequenceEv = true;
-
-    this.sequenceAllEvents();
-
-    process.on('SIGINT', () => {
-      this.sequenceEv = false;
-    });
+    this.sequenceAllChains();
   }
 
   onModuleDestroy() {
@@ -86,271 +118,25 @@ export class CLPoolService
     });
   }
 
-  private getCLPoolContract(address: string, provider: JsonRpcProvider): ClPool {
-    return ClPool__factory.connect(address, provider);
+  private sequenceAllChains() {
+    const chainIds = Array.from(new Set(this.WATCHED_ADDRESSES_CHAINS.values()));
+    for (const chainId of chainIds) {
+      void this.sequenceChainEvents(chainId);
+    }
   }
 
-  private async handleMint(address: string, chainId: number) {
-    this.logger.log(`[Chain: ${chainId}] Now sequencing LP mint event`);
-    if (!this.cacheService.isConnected()) return;
-    await this.haltUntilOpen(chainId);
-
-    let lastBlockNumber: number | undefined;
-
-    try {
-      this.logger.log(`[Chain: ${chainId}] Fetching latest block number`);
-      lastBlockNumber = await this.getLatestBlockNumber(chainId);
-    } catch (error: any) {
-      await this.releaseResource(chainId);
-      this.logger.error(
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-        `[Chain: ${chainId}] Unable to fetch latest block → ${error.message}`,
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-        error.stack,
-      );
-    }
-
-    if (typeof lastBlockNumber === 'undefined') return;
-
-    const indexerEventStatus = await this.getIndexerEventStatus(address, 'Mint', chainId);
-
-    if (indexerEventStatus.lastBlockNumber >= lastBlockNumber) {
-      this.logger.log(`[Indexer: ${indexerEventStatus.id}] Already at current block. Skipping...`);
-      await this.releaseResource(chainId);
-      return;
-    }
-
-    const connectionInfo = this.getConnectionInfo(chainId);
-    const promises = connectionInfo.rpcInfos.map((rpcInfo) => {
-      const provider = this.provider(rpcInfo, chainId);
-      const contract = this.getCLPoolContract(address, provider);
-      const blockStart = lastBlockNumber
-        ? Math.min(indexerEventStatus.lastBlockNumber + 1, lastBlockNumber)
-        : indexerEventStatus.lastBlockNumber + 1;
-      let blockEnd = blockStart + (rpcInfo.queryBlockRange || DEFAULT_BLOCK_RANGE);
-      blockEnd = Math.min(lastBlockNumber, blockEnd);
-      indexerEventStatus.lastBlockNumber = blockEnd;
-      return contract.queryFilter(contract.filters.Mint, blockStart, blockEnd);
-    });
-
-    const eventData = await Promise.any(promises);
-
-    for (const eventDatum of eventData) {
-      await this.waitFor(500);
-      const processedBlock = await eventDatum.getBlock();
-      const { amount0, amount1, sender, amount, owner } = eventDatum.args;
-      const transactionId = `${eventDatum.transactionHash.toLowerCase()}-${chainId}`;
-      let transactionEntity = await this.transactionRepository.findOneBy({
-        id: transactionId,
-      });
-      if (transactionEntity === null) {
-        transactionEntity = this.transactionRepository.create({
-          hash: eventDatum.transactionHash.toLowerCase(),
-          block: processedBlock.number,
-          timestamp: processedBlock.timestamp,
-          chainId,
-        });
-
-        transactionEntity = await this.transactionRepository.save(transactionEntity);
-      }
-
-      void this.resolveMint(
-        address,
-        chainId,
-        transactionEntity.hash,
-        amount0,
-        amount1,
-        amount,
-        owner,
-        sender,
-        eventDatum.index,
-      );
-    }
-
-    await this.indexerEventStatusRepository.save(indexerEventStatus);
-    await this.releaseResource(chainId);
-  }
-
-  private async handleBurn(address: string, chainId: number) {
-    this.logger.log(`[Chain: ${chainId}] Now sequencing LP burn event`);
-    if (!this.cacheService.isConnected()) return;
-    await this.haltUntilOpen(chainId);
-
-    let lastBlockNumber: number | undefined;
-
-    try {
-      this.logger.log(`[Chain: ${chainId}] Fetching latest block number`);
-      lastBlockNumber = await this.getLatestBlockNumber(chainId);
-    } catch (error: any) {
-      await this.releaseResource(chainId);
-      this.logger.error(
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-        `[Chain: ${chainId}] Unable to fetch latest block → ${error.message}`,
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-        error.stack,
-      );
-    }
-
-    if (typeof lastBlockNumber === 'undefined') return;
-
-    const indexerEventStatus = await this.getIndexerEventStatus(address, 'Burn', chainId);
-
-    if (indexerEventStatus.lastBlockNumber >= lastBlockNumber) {
-      this.logger.log(`[Indexer: ${indexerEventStatus.id}] Already at current block. Skipping...`);
-      await this.releaseResource(chainId);
-      return;
-    }
-
-    const connectionInfo = this.getConnectionInfo(chainId);
-    const promises = connectionInfo.rpcInfos.map((rpcInfo) => {
-      const provider = this.provider(rpcInfo, chainId);
-      const contract = this.getCLPoolContract(address, provider);
-      const blockStart = lastBlockNumber
-        ? Math.min(indexerEventStatus.lastBlockNumber + 1, lastBlockNumber)
-        : indexerEventStatus.lastBlockNumber + 1;
-      let blockEnd = blockStart + (rpcInfo.queryBlockRange || DEFAULT_BLOCK_RANGE);
-      blockEnd = Math.min(lastBlockNumber, blockEnd);
-      indexerEventStatus.lastBlockNumber = blockEnd;
-      return contract.queryFilter(contract.filters.Burn, blockStart, blockEnd);
-    });
-
-    const eventData = await Promise.any(promises);
-
-    for (const eventDatum of eventData) {
-      await this.waitFor(500);
-      const processedBlock = await eventDatum.getBlock();
-      const tx = await eventDatum.getTransaction();
-      const { amount0, amount1, amount, owner } = eventDatum.args;
-      const transactionId = `${eventDatum.transactionHash.toLowerCase()}-${chainId}`;
-      let transactionEntity = await this.transactionRepository.findOneBy({
-        id: transactionId,
-      });
-      if (transactionEntity === null) {
-        transactionEntity = this.transactionRepository.create({
-          hash: eventDatum.transactionHash.toLowerCase(),
-          block: processedBlock.number,
-          timestamp: processedBlock.timestamp,
-          chainId,
-        });
-
-        transactionEntity = await this.transactionRepository.save(transactionEntity);
-      }
-
-      void this.resolveBurn(
-        address,
-        chainId,
-        transactionEntity.hash,
-        amount0,
-        amount1,
-        amount,
-        owner,
-        tx.from,
-        eventDatum.index,
-      );
-      this.updateChainMetric(chainId);
-    }
-
-    await this.indexerEventStatusRepository.save(indexerEventStatus);
-    await this.releaseResource(chainId);
-  }
-
-  private async handleSwap(address: string, chainId: number) {
-    this.logger.log(`[Chain: ${chainId}] Now sequencing LP swap event`);
-    if (!this.cacheService.isConnected()) return;
-    await this.haltUntilOpen(chainId);
-
-    let lastBlockNumber: number | undefined;
-
-    try {
-      this.logger.log(`[Chain: ${chainId}] Fetching latest block number`);
-      lastBlockNumber = await this.getLatestBlockNumber(chainId);
-    } catch (error: any) {
-      await this.releaseResource(chainId);
-      this.logger.error(
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-        `[Chain: ${chainId}] Unable to fetch latest block → ${error.message}`,
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-        error.stack,
-      );
-    }
-
-    if (typeof lastBlockNumber === 'undefined') return;
-
-    const indexerEventStatus = await this.getIndexerEventStatus(address, 'Swap', chainId);
-
-    if (indexerEventStatus.lastBlockNumber >= lastBlockNumber) {
-      this.logger.log(`[Indexer: ${indexerEventStatus.id}] Already at current block. Skipping...`);
-      await this.releaseResource(chainId);
-      return;
-    }
-
-    const connectionInfo = this.getConnectionInfo(chainId);
-    const promises = connectionInfo.rpcInfos.map((rpcInfo) => {
-      const provider = this.provider(rpcInfo, chainId);
-      const contract = this.getCLPoolContract(address, provider);
-      const blockStart = lastBlockNumber
-        ? Math.min(indexerEventStatus.lastBlockNumber + 1, lastBlockNumber)
-        : indexerEventStatus.lastBlockNumber + 1;
-      let blockEnd = blockStart + (rpcInfo.queryBlockRange || DEFAULT_BLOCK_RANGE);
-      blockEnd = Math.min(lastBlockNumber, blockEnd);
-      indexerEventStatus.lastBlockNumber = blockEnd;
-      return contract.queryFilter(contract.filters.Swap, blockStart, blockEnd);
-    });
-
-    const eventData = await Promise.any(promises);
-
-    for (const eventDatum of eventData) {
-      await this.waitFor(500);
-      const processedBlock = await eventDatum.getBlock();
-      const { sender, recipient, amount0, amount1 } = eventDatum.args;
-      const transactionId = `${eventDatum.transactionHash.toLowerCase()}-${chainId}`;
-      let transactionEntity = await this.transactionRepository.findOneBy({
-        id: transactionId,
-      });
-      if (transactionEntity === null) {
-        transactionEntity = this.transactionRepository.create({
-          hash: eventDatum.transactionHash.toLowerCase(),
-          block: processedBlock.number,
-          timestamp: processedBlock.timestamp,
-          chainId,
-        });
-
-        transactionEntity = await this.transactionRepository.save(transactionEntity);
-      }
-
-      void this.resolveSwap(
-        address,
-        chainId,
-        transactionEntity.hash,
-        amount0,
-        amount1,
-        sender,
-        recipient,
-        sender,
-        eventDatum.index,
-      );
-
-      this.updateChainMetric(chainId);
-    }
-
-    await this.indexerEventStatusRepository.save(indexerEventStatus);
-    await this.releaseResource(chainId);
-  }
-
-  private async sequenceEvents(address: string, chainId: number) {
+  private async sequenceChainEvents(chainId: number) {
     while (this.sequenceEv) {
       try {
-        await this.waitFor(500);
-        void this.handleMint(address, chainId);
-        void this.handleSwap(address, chainId);
-        void this.handleBurn(address, chainId);
+        await this.handleEvents(chainId);
+        await this.resolveTransactionsForChain(chainId);
+        await this.waitFor(2000);
       } catch (error: any) {
         this.logger.error(
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-          `[Chain: ${chainId}] Failed to sequence pool events → ${error.message}`,
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+          `[Chain: ${chainId}] Global CL sequencing error → ${error.message}`,
           error.stack,
         );
+        await this.waitFor(5000);
       }
     }
   }
@@ -358,20 +144,188 @@ export class CLPoolService
   @OnEvent(EventTypes.CL_POOL_DEPLOYED)
   handleCLPoolDeployed(payload: ContractDeployEventPayload) {
     this.ADDRESS_DEPLOYMENT_BLOCK[payload.address] = payload.block;
-    this.watchedAddresses.add(payload.address);
-    void this.sequenceEvents(payload.address, payload.chainId);
+    this.WATCHED_ADDRESSES.add(payload.address.toLowerCase());
+    this.WATCHED_ADDRESSES_CHAINS.set(payload.address.toLowerCase(), payload.chainId);
+
+    const events = Object.values(this.poolEvents);
+
+    for (const eventName of events) {
+      void this.getIndexerEventStatus(payload.address.toLowerCase(), eventName, payload.chainId);
+    }
+  }
+
+  private async handleEvents(chainId: number) {
+    if (!this.cacheService.isConnected()) return;
+    await this.haltUntilOpen(chainId);
+
+    try {
+      const lastBlockNumber = await this.getLatestBlockNumber(chainId);
+      if (typeof lastBlockNumber === 'undefined') return;
+
+      const events = Object.values(this.poolEvents);
+
+      for (const eventHash of events) {
+        const indexerEventStatus = await this.getIndexerEventStatus('GLOBAL_CL', eventHash, chainId);
+        if (indexerEventStatus.lastBlockNumber >= lastBlockNumber) continue;
+
+        const connectionInfo = this.getConnectionInfo(chainId);
+        const promises = connectionInfo.rpcInfos.map((rpcInfo) => {
+          const provider = this.provider(rpcInfo, chainId);
+          const blockStart = indexerEventStatus.lastBlockNumber + 1;
+          let blockEnd = blockStart + (rpcInfo.queryBlockRange || DEFAULT_BLOCK_RANGE);
+          blockEnd = Math.min(lastBlockNumber, blockEnd);
+
+          return provider.getLogs({
+            fromBlock: blockStart,
+            toBlock: blockEnd,
+            topics: [eventHash],
+          });
+        });
+
+        const logData = await Promise.any(promises);
+        const contractInterface = ClPool__factory.createInterface();
+
+        for (const log of logData) {
+          const poolAddress = log.address.toLowerCase();
+          if (!this.WATCHED_ADDRESSES.has(poolAddress)) continue;
+
+          const parsedLog = contractInterface.parseLog(log);
+          if (!parsedLog) continue;
+
+          await this.processEvent(eventHash, poolAddress, chainId, log, parsedLog.args);
+        }
+
+        const processedMaxBlock =
+          logData.length > 0
+            ? Math.max(...logData.map((l) => l.blockNumber))
+            : indexerEventStatus.lastBlockNumber;
+        indexerEventStatus.lastBlockNumber = Math.max(
+          indexerEventStatus.lastBlockNumber,
+          processedMaxBlock,
+        );
+        await this.indexerEventStatusRepository.save(indexerEventStatus);
+      }
+    } finally {
+      await this.releaseResource(chainId);
+    }
+  }
+
+  private async processEvent(
+    eventHash: string,
+    address: string,
+    chainId: number,
+    log: Log,
+    args: any,
+  ) {
+    const connectionInfo = this.getConnectionInfo(chainId);
+    const blockPromises = connectionInfo.rpcInfos.map((rpcInfo) => {
+      const provider = this.provider(rpcInfo, chainId);
+      return provider.getBlock(log.blockNumber);
+    });
+
+    const processedBlock = await Promise.any(blockPromises);
+    if (!processedBlock) return;
+
+    const transactionId = `${log.transactionHash.toLowerCase()}-${chainId}`;
+    let transactionEntity = await this.transactionRepository.findOneBy({ id: transactionId });
+
+    if (transactionEntity === null) {
+      transactionEntity = this.transactionRepository.create({
+        hash: log.transactionHash.toLowerCase(),
+        block: log.blockNumber,
+        timestamp: processedBlock.timestamp,
+        chainId,
+      });
+      transactionEntity = await this.transactionRepository.save(transactionEntity);
+    }
+
+    if (eventHash === this.poolEvents.MINT) {
+      const resolvableMint: IResolvableCLMintTransaction = {
+        to: args.owner,
+        amountA: args.amount0.toString(),
+        amountB: args.amount1.toString(),
+        mintValue: args.amount.toString(),
+        chainId,
+        hash: transactionEntity.hash,
+        logIndex: log.index,
+        sender: args.sender,
+      };
+      await this.cacheService.hCache('cl-mint', resolvableMint.hash, JSON.stringify(resolvableMint));
+    } else if (eventHash === this.poolEvents.BURN) {
+      const resolvableBurn: IResolvableCLBurnTransaction = {
+        to: args.owner,
+        amountA: args.amount0.toString(),
+        amountB: args.amount1.toString(),
+        burnValue: args.amount.toString(),
+        chainId,
+        hash: transactionEntity.hash,
+        logIndex: log.index,
+        sender: args.owner,
+      };
+      await this.cacheService.hCache('cl-burn', resolvableBurn.hash, JSON.stringify(resolvableBurn));
+    } else if (eventHash === this.poolEvents.SWAP) {
+      const resolvableSwap: IResolvableCLSwapTransaction = {
+        from: args.sender,
+        to: args.recipient,
+        chainId,
+        hash: transactionEntity.hash,
+        amountA: args.amount0.toString(),
+        amountB: args.amount1.toString(),
+        logIndex: log.index,
+        sender: args.sender,
+      };
+      await this.cacheService.hCache('cl-swap', resolvableSwap.hash, JSON.stringify(resolvableSwap));
+    }
+
+    this.updateChainMetric(chainId);
+  }
+
+  private async resolveTransactionsForChain(chainId: number) {
+    const addresses = Array.from(this.WATCHED_ADDRESSES).filter(
+      (addr) => this.WATCHED_ADDRESSES_CHAINS.get(addr) === chainId,
+    );
+    for (const address of addresses) {
+      await this.resolveTransactions(address, chainId);
+    }
+  }
+
+  private async resolveTransactions(address: string, chainId: number) {
+    if (!this.cacheService.isConnected()) return;
+
+    this.logger.log(`Attempting CL transaction resolutions for ${address}...`);
+
+    const cachedMints = await this.cacheService.hObtainAll('cl-mint');
+    for (const [hash, stringValue] of Object.entries(cachedMints)) {
+      const resolvableMint: IResolvableCLMintTransaction = JSON.parse(stringValue);
+      if (resolvableMint.chainId === chainId) {
+        await this.resolveMint(address, chainId, resolvableMint);
+        await this.cacheService.hDecache('cl-mint', hash);
+      }
+    }
+
+    const cachedBurns = await this.cacheService.hObtainAll('cl-burn');
+    for (const [hash, stringValue] of Object.entries(cachedBurns)) {
+      const resolvableBurn: IResolvableCLBurnTransaction = JSON.parse(stringValue);
+      if (resolvableBurn.chainId === chainId) {
+        await this.resolveBurn(address, chainId, resolvableBurn);
+        await this.cacheService.hDecache('cl-burn', hash);
+      }
+    }
+
+    const cachedSwaps = await this.cacheService.hObtainAll('cl-swap');
+    for (const [hash, stringValue] of Object.entries(cachedSwaps)) {
+      const resolvableSwap: IResolvableCLSwapTransaction = JSON.parse(stringValue);
+      if (resolvableSwap.chainId === chainId) {
+        await this.resolveSwap(address, chainId, resolvableSwap);
+        await this.cacheService.hDecache('cl-swap', hash);
+      }
+    }
   }
 
   private async resolveMint(
     poolAddress: string,
     chainId: number,
-    transactionHash: string,
-    amountA: bigint,
-    amountB: bigint,
-    mintValue: bigint,
-    to: string,
-    sender: string,
-    logIndex: number,
+    resolvableMint: IResolvableCLMintTransaction,
   ) {
     const poolId = `${poolAddress.toLowerCase()}-${chainId}`;
     const poolEntity = await this.poolRepository.findOneOrFail({
@@ -383,15 +337,15 @@ export class CLPoolService
     const token0 = await this.loadTokenPrice(poolEntity.token0);
     const token1 = await this.loadTokenPrice(poolEntity.token1);
 
-    const txId = `${transactionHash}-${chainId}`;
+    const txId = `${resolvableMint.hash}-${chainId}`;
     const transactionEntity = await this.transactionRepository.findOneByOrFail({
       id: txId,
     });
 
     await this.waitFor(500);
 
-    const amount0 = parseFloat(formatUnits(amountA, token0.decimals));
-    const amount1 = parseFloat(formatUnits(amountB, token1.decimals));
+    const amount0 = parseFloat(formatUnits(resolvableMint.amountA, token0.decimals));
+    const amount1 = parseFloat(formatUnits(resolvableMint.amountB, token1.decimals));
     const amount0USD = amount0 * token0.derivedUSD;
     const amount1USD = amount1 * token1.derivedUSD;
     const amountUSD = amount0USD + amount1USD;
@@ -399,7 +353,7 @@ export class CLPoolService
     const amount0ETH = amount0 * token0.derivedETH;
     const amount1ETH = amount1 * token1.derivedETH;
     const amountETH = amount0ETH + amount1ETH;
-    const liquidity = parseFloat(formatEther(mintValue));
+    const liquidity = parseFloat(formatEther(resolvableMint.mintValue));
 
     let mintEntity = await this.mintRepository.findOneBy({
       id: `mint-${transactionEntity.hash.toLowerCase()}-${transactionEntity.chainId}`,
@@ -408,14 +362,14 @@ export class CLPoolService
     if (mintEntity === null) {
       mintEntity = this.mintRepository.create({
         transaction: transactionEntity,
-        to,
+        to: resolvableMint.to,
         chainId: transactionEntity.chainId,
         pool: poolEntity,
         amount0,
         amount1,
         amountUSD,
-        sender,
-        logIndex,
+        sender: resolvableMint.sender,
+        logIndex: resolvableMint.logIndex,
         timestamp: transactionEntity.timestamp,
         liquidity,
       });
@@ -486,13 +440,7 @@ export class CLPoolService
   private async resolveBurn(
     poolAddress: string,
     chainId: number,
-    transactionHash: string,
-    amountA: bigint,
-    amountB: bigint,
-    burnValue: bigint,
-    to: string,
-    sender: string,
-    logIndex: number,
+    resolvableBurn: IResolvableCLBurnTransaction,
   ) {
     const poolId = `${poolAddress.toLowerCase()}-${chainId}`;
     const poolEntity = await this.poolRepository.findOneOrFail({
@@ -504,19 +452,19 @@ export class CLPoolService
     const token0 = await this.loadTokenPrice(poolEntity.token0);
     const token1 = await this.loadTokenPrice(poolEntity.token1);
 
-    const txId = `${transactionHash.toLowerCase()}-${chainId}`;
+    const txId = `${resolvableBurn.hash.toLowerCase()}-${chainId}`;
     const transactionEntity = await this.transactionRepository.findOneByOrFail({
       id: txId,
     });
 
     await this.waitFor(500);
 
-    const amount0 = parseFloat(formatUnits(amountA, token0.decimals));
-    const amount1 = parseFloat(formatUnits(amountB, token1.decimals));
+    const amount0 = parseFloat(formatUnits(resolvableBurn.amountA, token0.decimals));
+    const amount1 = parseFloat(formatUnits(resolvableBurn.amountB, token1.decimals));
     const amount0USD = amount0 * token0.derivedUSD;
     const amount1USD = amount1 * token1.derivedUSD;
     const amountUSD = amount0USD + amount1USD;
-    const liquidity = parseFloat(formatEther(burnValue));
+    const liquidity = parseFloat(formatEther(resolvableBurn.burnValue));
 
     let burnEntity = await this.burnRepository.findOneBy({
       id: `burn-${transactionEntity.hash.toLowerCase()}-${transactionEntity.chainId}`,
@@ -525,14 +473,14 @@ export class CLPoolService
     if (burnEntity === null) {
       burnEntity = this.burnRepository.create({
         transaction: transactionEntity,
-        to,
+        to: resolvableBurn.to,
         chainId: transactionEntity.chainId,
         pool: poolEntity,
         amount0,
         amount1,
         amountUSD,
-        sender,
-        logIndex,
+        sender: resolvableBurn.sender,
+        logIndex: resolvableBurn.logIndex,
         timestamp: transactionEntity.timestamp,
         liquidity,
       });
@@ -566,13 +514,7 @@ export class CLPoolService
   private async resolveSwap(
     poolAddress: string,
     chainId: number,
-    transactionHash: string,
-    amountA: bigint,
-    amountB: bigint,
-    from: string,
-    to: string,
-    sender: string,
-    logIndex: number,
+    resolvableSwap: IResolvableCLSwapTransaction,
   ) {
     const poolId = `${poolAddress.toLowerCase()}-${chainId}`;
     const poolEntity = await this.poolRepository.findOneOrFail({
@@ -585,22 +527,24 @@ export class CLPoolService
     let token0 = await this.loadTokenPrice(poolEntity.token0);
     let token1 = await this.loadTokenPrice(poolEntity.token1);
 
-    const txId = `${transactionHash.toLowerCase()}-${chainId}`;
+    const txId = `${resolvableSwap.hash.toLowerCase()}-${chainId}`;
     const transactionEntity = await this.transactionRepository.findOneByOrFail({
       id: txId,
     });
 
-    const amount0 = parseFloat(formatUnits(amountA, token0.decimals));
-    const amount1 = parseFloat(formatUnits(amountB, token1.decimals));
+    const amount0 = parseFloat(formatUnits(resolvableSwap.amountA, token0.decimals));
+    const amount1 = parseFloat(formatUnits(resolvableSwap.amountB, token1.decimals));
     const amount0ETH = amount0 * token0.derivedETH;
     const amount0USD = amount0 * token0.derivedUSD;
     const amount1ETH = amount1 * token1.derivedETH;
     const amount1USD = amount1 * token1.derivedUSD;
 
     const amount0In = amount0 < 0 ? 0 : amount0;
-    const amount0Out = amount0 < 0 ? amount0 : 0;
+    const amount0Out = amount0 < 0 ? Math.abs(amount0) : 0;
     const amount1In = amount1 < 0 ? 0 : amount1;
-    const amount1Out = amount1 < 0 ? amount1 : 0;
+    const amount1Out = amount1 < 0 ? Math.abs(amount1) : 0;
+    const amount0Total = amount0In + amount0Out;
+    const amount1Total = amount1In + amount1Out;
 
     let swapEntity = await this.swapRepository.findOneBy({
       id: `swap-${transactionEntity.hash.toLowerCase()}-${transactionEntity.chainId}`,
@@ -617,10 +561,10 @@ export class CLPoolService
         amount1Out,
         amountUSD: amount0USD + amount1USD,
         chainId: transactionEntity.chainId,
-        from,
-        to,
-        logIndex,
-        sender,
+        from: resolvableSwap.from,
+        to: resolvableSwap.to,
+        logIndex: resolvableSwap.logIndex,
+        sender: resolvableSwap.sender,
       });
 
       swapEntity = await this.swapRepository.save(swapEntity);
@@ -628,17 +572,17 @@ export class CLPoolService
 
     poolEntity.volumeETH = poolEntity.volumeETH + amount0ETH + amount1ETH;
     poolEntity.volumeUSD = poolEntity.volumeUSD + amount0USD + amount1USD;
-    poolEntity.volumeToken0 = poolEntity.volumeToken0 + amount0;
-    poolEntity.volumeToken1 = poolEntity.volumeToken1 + amount1;
+    poolEntity.volumeToken0 = poolEntity.volumeToken0 + amount0Total;
+    poolEntity.volumeToken1 = poolEntity.volumeToken1 + amount1Total;
     poolEntity.txCount = poolEntity.txCount + 1;
     await this.poolRepository.save(poolEntity);
 
-    token0.tradeVolume = token0.tradeVolume + amount0;
+    token0.tradeVolume = token0.tradeVolume + amount0Total;
     token0.tradeVolumeUSD = token0.tradeVolumeUSD + amount0USD;
     token0.txCount = token0.txCount + 1;
     token0 = await this.tokenRepository.save(token0);
 
-    token1.tradeVolume = token1.tradeVolume + amount1;
+    token1.tradeVolume = token1.tradeVolume + amount1Total;
     token1.tradeVolumeUSD = token1.tradeVolumeUSD + amount1USD;
     token1.txCount = token1.txCount + 1;
     token1 = await this.tokenRepository.save(token1);
@@ -669,37 +613,29 @@ export class CLPoolService
     overallDayData.volumeUSD = overallDayData.volumeUSD + amount0USD + amount1USD;
     await this.overallDayDataRepository.save(overallDayData);
 
-    poolDayData.dailyVolumeToken0 = poolDayData.dailyVolumeToken0 + amount0;
-    poolDayData.dailyVolumeToken1 = poolDayData.dailyVolumeToken1 + amount1;
+    poolDayData.dailyVolumeToken0 = poolDayData.dailyVolumeToken0 + amount0Total;
+    poolDayData.dailyVolumeToken1 = poolDayData.dailyVolumeToken1 + amount1Total;
     poolDayData.dailyVolumeETH = poolDayData.dailyVolumeETH + amount0ETH + amount1ETH;
     poolDayData.dailyVolumeUSD = poolDayData.dailyVolumeUSD + amount0USD + amount1USD;
     await this.poolDayDataRepository.save(poolDayData);
 
-    poolHourData.hourlyVolumeToken0 = poolHourData.hourlyVolumeToken0 + amount0;
-    poolHourData.hourlyVolumeToken1 = poolHourData.hourlyVolumeToken1 + amount1;
+    poolHourData.hourlyVolumeToken0 = poolHourData.hourlyVolumeToken0 + amount0Total;
+    poolHourData.hourlyVolumeToken1 = poolHourData.hourlyVolumeToken1 + amount1Total;
     poolHourData.hourlyVolumeETH = poolHourData.hourlyVolumeETH + amount0ETH + amount1ETH;
     poolHourData.hourlyVolumeUSD = poolHourData.hourlyVolumeUSD + amount0USD + amount1USD;
     await this.poolHourDataRepository.save(poolHourData);
 
-    token0DayData.dailyVolumeToken = token0DayData.dailyVolumeToken + amount0;
+    token0DayData.dailyVolumeToken = token0DayData.dailyVolumeToken + amount0Total;
     token0DayData.dailyVolumeETH = token0DayData.dailyVolumeETH + amount0ETH;
     token0DayData.dailyVolumeUSD = token0DayData.dailyVolumeUSD + amount0USD;
     await this.tokenDayDataRepository.save(token0DayData);
 
-    token1DayData.dailyVolumeToken = token1DayData.dailyVolumeToken + amount1;
+    token1DayData.dailyVolumeToken = token1DayData.dailyVolumeToken + amount1Total;
     token1DayData.dailyVolumeETH = token1DayData.dailyVolumeETH + amount1ETH;
     token1DayData.dailyVolumeUSD = token1DayData.dailyVolumeUSD + amount1USD;
     await this.tokenDayDataRepository.save(token1DayData);
 
     return swapEntity;
-  }
-
-  private sequenceAllEvents() {
-    const chains = Object.fromEntries(this.WATCHED_ADDRESSES_CHAINS);
-
-    for (const pool of this.WATCHED_ADDRESSES.values()) {
-      void this.sequenceEvents(pool, chains[pool]);
-    }
   }
 
   private async loadTokenPrice(token: Token): Promise<Token> {
@@ -721,7 +657,7 @@ export class CLPoolService
     });
     if (overallDayData === null) {
       overallDayData = this.overallDayDataRepository.create({
-        id: dayId.toString(),
+        id: dataId,
         feesUSD: 0,
         txCount: 0,
         date: dayStartTimestamp,
@@ -750,7 +686,7 @@ export class CLPoolService
     const dayStartTimestamp = dayId * 86400;
     const dayPoolId = `${poolAddress}-${dayId.toString()}`;
     const pool = await this.poolRepository.findOneByOrFail({
-      address: ILike(`%${poolAddress.toLowerCase()}%`),
+      address: poolAddress.toLowerCase(),
     });
 
     let poolDayData = await this.poolDayDataRepository.findOneBy({
@@ -788,11 +724,11 @@ export class CLPoolService
   }
 
   private async updatePoolHourData(timestamp: number, poolAddress: string) {
-    const hourIndex = timestamp / 3600;
+    const hourIndex = Math.floor(timestamp / 3600);
     const hourStartUnix = hourIndex * 3600;
     const hourPoolId = `${poolAddress}-${hourIndex.toString()}`;
     const pool = await this.poolRepository.findOneByOrFail({
-      address: ILike(`%${poolAddress.toLowerCase()}%`),
+      address: poolAddress.toLowerCase(),
     });
 
     let poolHourData = await this.poolHourDataRepository.findOneBy({

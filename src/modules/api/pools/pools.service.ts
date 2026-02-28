@@ -7,7 +7,7 @@ import { Mint } from '../../database/entities/mint.entity';
 import { Burn } from '../../database/entities/burn.entity';
 import { PoolHourData } from '../../database/entities/pool-hour-data.entity';
 import { PoolDayData } from '../../database/entities/pool-day-data.entity';
-import { And, ILike, LessThanOrEqual, MoreThanOrEqual, Repository } from 'typeorm';
+import { And, Equal, ILike, LessThanOrEqual, MoreThanOrEqual, Repository } from 'typeorm';
 
 @Injectable()
 export class PoolsService {
@@ -35,10 +35,12 @@ export class PoolsService {
   }
 
   async getSinglePool(poolIdOrAddress: string) {
-    const pool = await this.poolRepository.findOneBy([
-      { id: ILike(`%${poolIdOrAddress}%`) },
-      { address: ILike(`%${poolIdOrAddress}%`) },
-    ]);
+    const isAddress = poolIdOrAddress.length === 42;
+    const whereCondition = isAddress
+      ? [{ id: ILike(`%${poolIdOrAddress}%`) }, { address: Equal(poolIdOrAddress.toLowerCase()) }]
+      : [{ id: ILike(`%${poolIdOrAddress}%`) }, { address: ILike(`%${poolIdOrAddress}%`) }];
+
+    const pool = await this.poolRepository.findOneBy(whereCondition);
 
     if (pool === null) throw new NotFoundException('Pool was not found');
     return pool;
@@ -48,30 +50,26 @@ export class PoolsService {
     page = page - 1;
     const offset = page * limit;
 
+    const isAddress = poolIdOrAddress.length === 42;
+    const poolCondition = isAddress
+      ? [{ id: ILike(`%${poolIdOrAddress}%`) }, { address: Equal(poolIdOrAddress.toLowerCase()) }]
+      : [{ id: ILike(`%${poolIdOrAddress}%`) }, { address: ILike(`%${poolIdOrAddress}%`) }];
+
     const transactions = await this.transactionRepository.find({
       where: [
         {
           swaps: {
-            pool: [
-              { id: ILike(`%${poolIdOrAddress}%`) },
-              { address: ILike(`%${poolIdOrAddress}%`) },
-            ],
+            pool: poolCondition,
           },
         },
         {
           burns: {
-            pool: [
-              { id: ILike(`%${poolIdOrAddress}%`) },
-              { address: ILike(`%${poolIdOrAddress}%`) },
-            ],
+            pool: poolCondition,
           },
         },
         {
           mints: {
-            pool: [
-              { id: ILike(`%${poolIdOrAddress}%`) },
-              { address: ILike(`%${poolIdOrAddress}%`) },
-            ],
+            pool: poolCondition,
           },
         },
       ],
@@ -92,9 +90,14 @@ export class PoolsService {
     page = page - 1;
     const offset = page * limit;
 
+    const isAddress = poolIdOrAddress.length === 42;
+    const poolCondition = isAddress
+      ? [{ id: ILike(`%${poolIdOrAddress}%`) }, { address: Equal(poolIdOrAddress.toLowerCase()) }]
+      : [{ id: ILike(`%${poolIdOrAddress}%`) }, { address: ILike(`%${poolIdOrAddress}%`) }];
+
     const swaps = await this.swapRepository.find({
       where: {
-        pool: [{ id: ILike(`%${poolIdOrAddress}%`) }, { address: ILike(`%${poolIdOrAddress}%`) }],
+        pool: poolCondition,
       },
       take: limit,
       skip: offset,
@@ -108,9 +111,14 @@ export class PoolsService {
     page = page - 1;
     const offset = page * limit;
 
+    const isAddress = poolIdOrAddress.length === 42;
+    const poolCondition = isAddress
+      ? [{ id: ILike(`%${poolIdOrAddress}%`) }, { address: Equal(poolIdOrAddress.toLowerCase()) }]
+      : [{ id: ILike(`%${poolIdOrAddress}%`) }, { address: ILike(`%${poolIdOrAddress}%`) }];
+
     const burns = await this.burnRepository.find({
       where: {
-        pool: [{ id: ILike(`%${poolIdOrAddress}%`) }, { address: ILike(`%${poolIdOrAddress}%`) }],
+        pool: poolCondition,
       },
       take: limit,
       skip: offset,
@@ -125,9 +133,14 @@ export class PoolsService {
     page = page - 1;
     const offset = page * limit;
 
+    const isAddress = poolIdOrAddress.length === 42;
+    const poolCondition = isAddress
+      ? [{ id: ILike(`%${poolIdOrAddress}%`) }, { address: Equal(poolIdOrAddress.toLowerCase()) }]
+      : [{ id: ILike(`%${poolIdOrAddress}%`) }, { address: ILike(`%${poolIdOrAddress}%`) }];
+
     const mints = await this.mintRepository.find({
       where: {
-        pool: [{ id: ILike(`%${poolIdOrAddress}%`) }, { address: ILike(`%${poolIdOrAddress}%`) }],
+        pool: poolCondition,
       },
       take: limit,
       skip: offset,
@@ -153,9 +166,14 @@ export class PoolsService {
     const startHourUnix = Math.floor(startHour.getTime() / 1000);
     const endHourUnix = Math.floor(endHour.getTime() / 1000);
 
+    const isAddress = poolIdOrAddress.length === 42;
+    const poolCondition = isAddress
+      ? [{ id: ILike(`%${poolIdOrAddress}%`) }, { address: Equal(poolIdOrAddress.toLowerCase()) }]
+      : [{ id: ILike(`%${poolIdOrAddress}%`) }, { address: ILike(`%${poolIdOrAddress}%`) }];
+
     return this.poolHourDataRepository.find({
       where: {
-        pool: [{ id: ILike(`%${poolIdOrAddress}%`) }, { address: ILike(`%${poolIdOrAddress}%`) }],
+        pool: poolCondition,
         hourStartUnix: And(MoreThanOrEqual(startHourUnix), LessThanOrEqual(endHourUnix)),
       },
     });
@@ -176,9 +194,14 @@ export class PoolsService {
     const startHourUnix = Math.floor(startHour.getTime() / 1000);
     const endHourUnix = Math.floor(endHour.getTime() / 1000);
 
+    const isAddress = poolIdOrAddress.length === 42;
+    const poolCondition = isAddress
+      ? [{ id: ILike(`%${poolIdOrAddress}%`) }, { address: Equal(poolIdOrAddress.toLowerCase()) }]
+      : [{ id: ILike(`%${poolIdOrAddress}%`) }, { address: ILike(`%${poolIdOrAddress}%`) }];
+
     return this.poolDayDataRepository.find({
       where: {
-        pool: [{ id: ILike(`%${poolIdOrAddress}%`) }, { address: ILike(`%${poolIdOrAddress}%`) }],
+        pool: poolCondition,
         date: And(MoreThanOrEqual(startHourUnix), LessThanOrEqual(endHourUnix)),
       },
     });

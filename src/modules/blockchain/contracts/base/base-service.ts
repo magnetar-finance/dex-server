@@ -13,6 +13,7 @@ export abstract class BaseService {
   protected readonly logger = new Logger(BaseService.name);
 
   private readonly connectionsMap: Map<number, ChainConnectionInfo> = new Map();
+  private readonly providerCache: Map<string, JsonRpcProvider> = new Map();
   protected readonly eventsProcessed: Map<number, number> = new Map();
 
   protected readonly watchedAddresses: Set<string> = new Set();
@@ -53,7 +54,15 @@ export abstract class BaseService {
   }
 
   protected provider(rpcInfo: RPCInfo, chainId?: number) {
-    return new JsonRpcProvider(rpcInfo.url, chainId);
+    const cacheKey = `${rpcInfo.url}-${chainId || 'any'}`;
+    let cachedProvider = this.providerCache.get(cacheKey);
+
+    if (!cachedProvider) {
+      cachedProvider = new JsonRpcProvider(rpcInfo.url, chainId);
+      this.providerCache.set(cacheKey, cachedProvider);
+    }
+
+    return cachedProvider;
   }
 
   protected async getERC20Metadata(address: string, chainId: number) {
@@ -108,7 +117,10 @@ export abstract class BaseService {
           `Service with lock ID ${this.lockId} has claimed processing resource on chain with ID ${chainId}`,
         );
         break;
-      } else continue;
+      } else {
+        await this.waitFor(500); // Prevent CPU spin on lock contention
+        continue;
+      }
     }
   }
 
