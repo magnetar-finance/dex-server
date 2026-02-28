@@ -159,6 +159,8 @@ export class V2PoolService
     if (!this.cacheService.isConnected()) return;
     await this.haltUntilOpen(chainId);
 
+    this.logger.log(`[Chain: ${chainId}]: Processing V2 pool events`);
+
     try {
       const lastBlockNumber = await this.getLatestBlockNumber(chainId);
       if (typeof lastBlockNumber === 'undefined') return;
@@ -383,7 +385,7 @@ export class V2PoolService
   private async resolveTransactions(address: string, chainId: number) {
     if (!this.cacheService.isConnected()) return; // Cache must be connected
 
-    this.logger.log(`Attempting transaction resolutions...`);
+    this.logger.log(`[Chain: ${chainId}] Attempting V2 transaction resolutions for ${address}...`);
 
     const cachedTransfers = await this.cacheService.hObtainAll('transfer');
     // Find cached transfers matching parameters

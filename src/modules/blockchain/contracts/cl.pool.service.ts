@@ -158,6 +158,8 @@ export class CLPoolService
     if (!this.cacheService.isConnected()) return;
     await this.haltUntilOpen(chainId);
 
+    this.logger.log(`[Chain: ${chainId}]: Processing CL pool events`);
+
     try {
       const lastBlockNumber = await this.getLatestBlockNumber(chainId);
       if (typeof lastBlockNumber === 'undefined') return;
@@ -314,7 +316,7 @@ export class CLPoolService
   private async resolveTransactions(address: string, chainId: number) {
     if (!this.cacheService.isConnected()) return;
 
-    this.logger.log(`Attempting CL transaction resolutions for ${address}...`);
+    this.logger.log(`[Chain: ${chainId}] Attempting CL transaction resolutions for ${address}...`);
 
     const cachedMints = await this.cacheService.hObtainAll('cl-mint');
     for (const [hash, stringValue] of Object.entries(cachedMints)) {
