@@ -14,7 +14,12 @@ export class OverallDayData {
   id: string;
 
   @Index()
-  @Column('int')
+  @Column('bigint', {
+    transformer: {
+      to: (value: number) => value?.toString(),
+      from: (value: string) => (value ? Number(value) : value),
+    },
+  })
   date: number;
 
   @Column('decimal', {

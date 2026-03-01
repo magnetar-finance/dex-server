@@ -16,7 +16,12 @@ export class PoolHourData {
   @PrimaryColumn()
   id: string;
 
-  @Column('int')
+  @Column('bigint', {
+    transformer: {
+      to: (value: number) => value?.toString(),
+      from: (value: string) => (value ? Number(value) : value),
+    },
+  })
   hourStartUnix: number;
 
   @Index()

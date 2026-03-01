@@ -1,7 +1,7 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class Base1772308253140 implements MigrationInterface {
-  name = 'Base1772308253140';
+export class Base1772327265860 implements MigrationInterface {
+  name = 'Base1772327265860';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(
@@ -45,7 +45,7 @@ export class Base1772308253140 implements MigrationInterface {
       `CREATE INDEX "IDX_701da7f5ffee9a73d2efbc7181" ON "mints" ("pool_id") `,
     );
     await queryRunner.query(
-      `CREATE TABLE "pool_hour_data" ("id" character varying NOT NULL, "hour_start_unix" integer NOT NULL, "reserve0" numeric(500,5) NOT NULL, "reserve1" numeric(500,5) NOT NULL, "total_supply" numeric(500,5) NOT NULL, "reserve_usd" numeric(500,5) NOT NULL, "reserve_eth" numeric(500,5) NOT NULL, "hourly_volume_token0" numeric(500,5) NOT NULL, "hourly_volume_token1" numeric(500,5) NOT NULL, "hourly_volume_usd" numeric(500,5) NOT NULL, "hourly_volume_eth" numeric(500,5) NOT NULL, "hourly_txns" bigint NOT NULL, "version" integer NOT NULL, "created_at" TIMESTAMP NOT NULL DEFAULT now(), "updated_at" TIMESTAMP NOT NULL DEFAULT now(), "pool_id" character varying, CONSTRAINT "PK_bd3e248a4a44a474ee2710ec329" PRIMARY KEY ("id"))`,
+      `CREATE TABLE "pool_hour_data" ("id" character varying NOT NULL, "hour_start_unix" bigint NOT NULL, "reserve0" numeric(500,5) NOT NULL, "reserve1" numeric(500,5) NOT NULL, "total_supply" numeric(500,5) NOT NULL, "reserve_usd" numeric(500,5) NOT NULL, "reserve_eth" numeric(500,5) NOT NULL, "hourly_volume_token0" numeric(500,5) NOT NULL, "hourly_volume_token1" numeric(500,5) NOT NULL, "hourly_volume_usd" numeric(500,5) NOT NULL, "hourly_volume_eth" numeric(500,5) NOT NULL, "hourly_txns" bigint NOT NULL, "version" integer NOT NULL, "created_at" TIMESTAMP NOT NULL DEFAULT now(), "updated_at" TIMESTAMP NOT NULL DEFAULT now(), "pool_id" character varying, CONSTRAINT "PK_bd3e248a4a44a474ee2710ec329" PRIMARY KEY ("id"))`,
     );
     await queryRunner.query(
       `CREATE INDEX "IDX_45e83e45011ed1000559b91726" ON "pool_hour_data" ("pool_id") `,
@@ -113,13 +113,13 @@ export class Base1772308253140 implements MigrationInterface {
       `CREATE TABLE "indexer_event_statuses" ("id" character varying NOT NULL, "last_block_number" bigint NOT NULL, "event_name" character varying NOT NULL, "chain_id" integer NOT NULL, "identifier" character varying NOT NULL, "version" integer NOT NULL, "created_at" TIMESTAMP NOT NULL DEFAULT now(), "updated_at" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "PK_3c92a36580a54dd0a8d4ec2cc0e" PRIMARY KEY ("id")); COMMENT ON COLUMN "indexer_event_statuses"."last_block_number" IS 'Last processed block for this event'; COMMENT ON COLUMN "indexer_event_statuses"."event_name" IS 'Event name'; COMMENT ON COLUMN "indexer_event_statuses"."chain_id" IS 'Chain ID'`,
     );
     await queryRunner.query(
-      `CREATE TABLE "overall_day_data" ("id" character varying NOT NULL, "date" integer NOT NULL, "volume_eth" numeric(500,5) NOT NULL, "volume_usd" numeric(500,5) NOT NULL, "liquidity_eth" numeric(500,5) NOT NULL, "liquidity_usd" numeric(500,5) NOT NULL, "tx_count" bigint NOT NULL, "fees_usd" numeric(500,5) NOT NULL, "total_trade_volume_eth" numeric(500,5) NOT NULL, "chain_id" integer NOT NULL, "total_trade_volume_usd" numeric(500,5) NOT NULL, "version" integer NOT NULL, "created_at" TIMESTAMP NOT NULL DEFAULT now(), "updated_at" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "PK_ed9607e00c1e7a1ef7781f75e8a" PRIMARY KEY ("id")); COMMENT ON COLUMN "overall_day_data"."chain_id" IS 'Chain ID'`,
+      `CREATE TABLE "overall_day_data" ("id" character varying NOT NULL, "date" bigint NOT NULL, "volume_eth" numeric(500,5) NOT NULL, "volume_usd" numeric(500,5) NOT NULL, "liquidity_eth" numeric(500,5) NOT NULL, "liquidity_usd" numeric(500,5) NOT NULL, "tx_count" bigint NOT NULL, "fees_usd" numeric(500,5) NOT NULL, "total_trade_volume_eth" numeric(500,5) NOT NULL, "chain_id" integer NOT NULL, "total_trade_volume_usd" numeric(500,5) NOT NULL, "version" integer NOT NULL, "created_at" TIMESTAMP NOT NULL DEFAULT now(), "updated_at" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "PK_ed9607e00c1e7a1ef7781f75e8a" PRIMARY KEY ("id")); COMMENT ON COLUMN "overall_day_data"."chain_id" IS 'Chain ID'`,
     );
     await queryRunner.query(
       `CREATE INDEX "IDX_ab1e8bc53c547546463b9899fa" ON "overall_day_data" ("date") `,
     );
     await queryRunner.query(
-      `CREATE TABLE "pool_day_data" ("id" character varying NOT NULL, "date" integer NOT NULL, "reserve0" numeric(500,5) NOT NULL, "reserve1" numeric(500,5) NOT NULL, "total_supply" numeric(500,5) NOT NULL, "reserve_usd" numeric(500,5) NOT NULL, "reserve_eth" numeric(500,5) NOT NULL, "daily_volume_token0" numeric(500,5) NOT NULL, "daily_volume_token1" numeric(500,5) NOT NULL, "daily_volume_usd" numeric(500,5) NOT NULL, "daily_volume_eth" numeric(500,5) NOT NULL, "daily_txns" bigint NOT NULL, "version" integer NOT NULL, "created_at" TIMESTAMP NOT NULL DEFAULT now(), "updated_at" TIMESTAMP NOT NULL DEFAULT now(), "pool_id" character varying, CONSTRAINT "PK_712b106eb8cc6842af6ca4cab80" PRIMARY KEY ("id"))`,
+      `CREATE TABLE "pool_day_data" ("id" character varying NOT NULL, "date" bigint NOT NULL, "reserve0" numeric(500,5) NOT NULL, "reserve1" numeric(500,5) NOT NULL, "total_supply" numeric(500,5) NOT NULL, "reserve_usd" numeric(500,5) NOT NULL, "reserve_eth" numeric(500,5) NOT NULL, "daily_volume_token0" numeric(500,5) NOT NULL, "daily_volume_token1" numeric(500,5) NOT NULL, "daily_volume_usd" numeric(500,5) NOT NULL, "daily_volume_eth" numeric(500,5) NOT NULL, "daily_txns" bigint NOT NULL, "version" integer NOT NULL, "created_at" TIMESTAMP NOT NULL DEFAULT now(), "updated_at" TIMESTAMP NOT NULL DEFAULT now(), "pool_id" character varying, CONSTRAINT "PK_712b106eb8cc6842af6ca4cab80" PRIMARY KEY ("id"))`,
     );
     await queryRunner.query(
       `CREATE INDEX "IDX_2f4c9e466537cf8101cbdceaea" ON "pool_day_data" ("pool_id") `,
@@ -128,7 +128,7 @@ export class Base1772308253140 implements MigrationInterface {
       `CREATE TABLE "stats" ("id" character varying NOT NULL, "tx_count" bigint NOT NULL, "total_pairs_created" bigint NOT NULL, "total_volume_locked_usd" numeric(500,5) NOT NULL, "total_volume_locked_eth" numeric(500,5) NOT NULL, "total_fees_usd" numeric(500,5) NOT NULL, "total_bribes_usd" numeric(500,5) NOT NULL, "total_trade_volume_usd" numeric(500,5) NOT NULL, "total_trade_volume_eth" numeric(500,5) NOT NULL, "chain_id" integer NOT NULL, "version" integer NOT NULL, "created_at" TIMESTAMP NOT NULL DEFAULT now(), "updated_at" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "PK_c76e93dfef28ba9b6942f578ab1" PRIMARY KEY ("id")); COMMENT ON COLUMN "stats"."chain_id" IS 'Chain ID'`,
     );
     await queryRunner.query(
-      `CREATE TABLE "token_day_data" ("id" character varying NOT NULL, "date" integer NOT NULL, "daily_volume_token" numeric(500,5) NOT NULL, "daily_volume_eth" numeric(500,5) NOT NULL, "daily_volume_usd" numeric(500,5) NOT NULL, "daily_txns" bigint NOT NULL, "total_liquidity_token" numeric(500,5) NOT NULL, "total_liquidity_eth" numeric(500,5) NOT NULL, "total_liquidity_usd" numeric(500,5) NOT NULL, "price_usd" numeric(500,5) NOT NULL, "price_eth" numeric(500,5) NOT NULL, "token_id" character varying, CONSTRAINT "PK_73fc06337215e86196b36822116" PRIMARY KEY ("id"))`,
+      `CREATE TABLE "token_day_data" ("id" character varying NOT NULL, "date" bigint NOT NULL, "daily_volume_token" numeric(500,5) NOT NULL, "daily_volume_eth" numeric(500,5) NOT NULL, "daily_volume_usd" numeric(500,5) NOT NULL, "daily_txns" bigint NOT NULL, "total_liquidity_token" numeric(500,5) NOT NULL, "total_liquidity_eth" numeric(500,5) NOT NULL, "total_liquidity_usd" numeric(500,5) NOT NULL, "price_usd" numeric(500,5) NOT NULL, "price_eth" numeric(500,5) NOT NULL, "token_id" character varying, CONSTRAINT "PK_73fc06337215e86196b36822116" PRIMARY KEY ("id"))`,
     );
     await queryRunner.query(
       `CREATE INDEX "IDX_b8950a8bc7b60231137573740e" ON "token_day_data" ("token_id") `,
