@@ -10,7 +10,7 @@ import { CacheService } from '../../cache/cache.service';
 import { IndexerEventStatus } from '../../database/entities/indexer-event-status.entity';
 import { Pool, PoolType } from '../../database/entities/pool.entity';
 import { Token } from '../../database/entities/token.entity';
-import { Equal, Or, Repository } from 'typeorm';
+import { Equal, ILike, Or, Repository } from 'typeorm';
 import { ChainConnectionInfo } from '../interfaces';
 import { OnEvent } from '@nestjs/event-emitter';
 import { type ContractDeployEventPayload, EventTypes } from './types';
@@ -890,7 +890,7 @@ export class V2PoolService
     const dayStartTimestamp = dayId * 86400;
     const dayPoolId = `${poolAddress}-${dayId.toString()}`;
     const pool = await this.poolRepository.findOneByOrFail({
-      address: poolAddress.toLowerCase(),
+      address: ILike(`%${poolAddress.toLowerCase()}%`),
     });
 
     let poolDayData = await this.poolDayDataRepository.findOneBy({
@@ -932,7 +932,7 @@ export class V2PoolService
     const hourStartUnix = hourIndex * 3600;
     const hourPoolId = `${poolAddress}-${hourIndex.toString()}`;
     const pool = await this.poolRepository.findOneByOrFail({
-      address: poolAddress.toLowerCase(),
+      address: ILike(`%${poolAddress.toLowerCase()}%`),
     });
 
     let poolHourData = await this.poolHourDataRepository.findOneBy({
