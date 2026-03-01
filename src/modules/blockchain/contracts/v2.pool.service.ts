@@ -364,7 +364,7 @@ export class V2PoolService
         syncQueryRunner.manager.save(token1),
       ]);
       await syncQueryRunner.commitTransaction();
-    } catch (error) {
+    } catch (error: any) {
       await syncQueryRunner.rollbackTransaction();
       throw error;
     } finally {
@@ -625,7 +625,7 @@ export class V2PoolService
 
       mintEntity = mint;
       await mintQueryRunner.commitTransaction();
-    } catch (error) {
+    } catch (error: any) {
       await mintQueryRunner.rollbackTransaction();
       throw error;
     } finally {
@@ -739,7 +739,7 @@ export class V2PoolService
 
       burnEntity = burn;
       await burnQueryRunner.commitTransaction();
-    } catch (error) {
+    } catch (error: any) {
       await burnQueryRunner.rollbackTransaction();
       throw error;
     } finally {
@@ -892,7 +892,7 @@ export class V2PoolService
 
       swapEntity = swap;
       await swapQueryRunner.commitTransaction();
-    } catch (error) {
+    } catch (error: any) {
       await swapQueryRunner.rollbackTransaction();
       throw error;
     } finally {
