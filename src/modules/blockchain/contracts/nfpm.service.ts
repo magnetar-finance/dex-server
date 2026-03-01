@@ -2,12 +2,12 @@ import { Inject, Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/commo
 import { BaseFactoryContractService } from './base/base-factory';
 import { ChainIds, CONNECTION_INFO, DEFAULT_BLOCK_RANGE } from '../../../common/variables';
 import { ChainConnectionInfo } from '../interfaces';
-import { InjectRepository } from '@nestjs/typeorm';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { IndexerEventStatus } from '../../database/entities/indexer-event-status.entity';
 import { CacheService } from '../../cache/cache.service';
 import { Pool, PoolType } from '../../database/entities/pool.entity';
 import { Statistics } from '../../database/entities/statistics.entity';
-import { Equal, ILike, Repository } from 'typeorm';
+import { DataSource, EntityManager, Equal, ILike, Repository } from 'typeorm';
 import { Nfpm, Nfpm__factory } from './typechain';
 import { formatUnits, JsonRpcProvider, ZeroAddress } from 'ethers';
 import { User } from '../../database/entities/user.entity';
@@ -38,6 +38,7 @@ export class NFPMContractService
     @InjectRepository(User) private readonly userRepository: Repository<User>,
     @InjectRepository(LiquidityPosition)
     private readonly liquidityPositionRepository: Repository<LiquidityPosition>,
+    @InjectDataSource() private readonly dataSource: DataSource,
   ) {
     super(connectionInfo, cacheService, indexerStatusRepository, statisticsRepository);
   }
@@ -209,43 +210,58 @@ export class NFPMContractService
           continue;
         }
 
-        if (resolvableTransfer.type === 'mint') {
-          const liquidity = parseFloat(formatUnits(position.liquidity, 18));
+        const queryRunner = this.dataSource.createQueryRunner();
+        await queryRunner.connect();
+        await queryRunner.startTransaction();
 
-          await this.updateLiquidityPosition(
-            pool,
-            to,
-            liquidity,
-            tokenId,
-            blockNumber,
-            transactionHash,
-          );
-        } else if (resolvableTransfer.type === 'burn') {
-          const lp = await this.liquidityPositionRepository.findOneByOrFail({
-            pool: { id: pool.id },
-            clPositionTokenId: tokenId,
-          });
-          await this.liquidityPositionRepository.remove(lp);
-        } else {
-          const lp = await this.liquidityPositionRepository.findOneByOrFail({
-            pool: { id: pool.id },
-            clPositionTokenId: tokenId,
-          });
+        try {
+          if (resolvableTransfer.type === 'mint') {
+            const liquidity = parseFloat(formatUnits(position.liquidity, 18));
 
-          const amount = lp.position;
-          lp.position = lp.position - amount;
-          await this.liquidityPositionRepository.save(lp);
+            await this.updateLiquidityPosition(
+              pool,
+              to,
+              liquidity,
+              tokenId,
+              blockNumber,
+              transactionHash,
+              queryRunner.manager,
+            );
+          } else if (resolvableTransfer.type === 'burn') {
+            const lp = await queryRunner.manager.getRepository(LiquidityPosition).findOneByOrFail({
+              pool: { id: pool.id },
+              clPositionTokenId: tokenId,
+            });
+            await queryRunner.manager.remove(lp);
+          } else {
+            const lp = await queryRunner.manager.getRepository(LiquidityPosition).findOneByOrFail({
+              pool: { id: pool.id },
+              clPositionTokenId: tokenId,
+            });
 
-          await this.updateLiquidityPosition(
-            pool,
-            to,
-            amount,
-            tokenId,
-            blockNumber,
-            transactionHash,
-          );
+            const amount = lp.position;
+            lp.position = lp.position - amount;
+            await queryRunner.manager.save(lp);
+
+            await this.updateLiquidityPosition(
+              pool,
+              to,
+              amount,
+              tokenId,
+              blockNumber,
+              transactionHash,
+              queryRunner.manager,
+            );
+          }
+          await this.cacheService.hDecache('nfpm-token-transfer', tId);
+          await queryRunner.commitTransaction();
+        } catch (error) {
+          await queryRunner.rollbackTransaction();
+          throw error;
+        } finally {
+          await queryRunner.release();
         }
-        await this.cacheService.hDecache('nfpm-token-transfer', tId);
+
         await this.releaseResource(chainId);
       }
     } catch (error: any) {
@@ -266,24 +282,30 @@ export class NFPMContractService
     tokenId?: number,
     blockNumber?: number,
     transaction?: string,
+    manager?: EntityManager,
   ) {
-    let user = await this.userRepository.findOneBy({ id: account.toLowerCase() });
+    const userRepo = manager ? manager.getRepository(User) : this.userRepository;
+    const lpRepo = manager
+      ? manager.getRepository(LiquidityPosition)
+      : this.liquidityPositionRepository;
+
+    let user = await userRepo.findOneBy({ id: account.toLowerCase() });
 
     if (user === null) {
-      user = this.userRepository.create({
+      user = userRepo.create({
         address: account,
       });
-      user = await this.userRepository.save(user);
+      user = manager ? await manager.save(user) : await userRepo.save(user);
     }
 
-    let lpPosition = await this.liquidityPositionRepository.findOneBy({
+    let lpPosition = await lpRepo.findOneBy({
       pool: { id: pool.id },
       account: { id: user.id },
       clPositionTokenId: tokenId,
     });
 
     if (lpPosition === null) {
-      lpPosition = this.liquidityPositionRepository.create({
+      lpPosition = lpRepo.create({
         account: user,
         pool,
         position: 0,
@@ -293,10 +315,10 @@ export class NFPMContractService
         clPositionTokenId: tokenId,
       });
 
-      lpPosition = await this.liquidityPositionRepository.save(lpPosition);
+      lpPosition = manager ? await manager.save(lpPosition) : await lpRepo.save(lpPosition);
     }
 
     lpPosition.position = lpPosition.position + amount;
-    return this.liquidityPositionRepository.save(lpPosition);
+    return manager ? manager.save(lpPosition) : lpRepo.save(lpPosition);
   }
 }
