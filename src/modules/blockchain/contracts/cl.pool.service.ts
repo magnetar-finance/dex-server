@@ -224,14 +224,8 @@ export class CLPoolService
   }
 
   private async processEvent(eventHash: string, chainId: number, log: Log, args: any) {
-    const connectionInfo = this.getConnectionInfo(chainId);
-    const blockPromises = connectionInfo.rpcInfos.map((rpcInfo) => {
-      const provider = this.provider(rpcInfo, chainId);
-      return provider.getBlock(log.blockNumber);
-    });
-
-    const processedBlock = await Promise.any(blockPromises);
-    if (!processedBlock) return;
+    await this.waitFor(3000); // Wait for 3 seconds
+    const processedBlock = await log.getBlock();
 
     const transactionId = `${log.transactionHash.toLowerCase()}-${chainId}`;
     let transactionEntity = await this.transactionRepository.findOneBy({ id: transactionId });
