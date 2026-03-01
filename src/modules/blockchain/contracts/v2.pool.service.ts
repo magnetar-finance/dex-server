@@ -228,16 +228,9 @@ export class V2PoolService
     log: Log,
     args: any,
   ) {
-    const connectionInfo = this.getConnectionInfo(chainId);
-    const blockPromises = connectionInfo.rpcInfos.map((rpcInfo) => {
-      const provider = this.provider(rpcInfo, chainId);
-
-      return provider.getBlock(log.blockNumber);
-    });
-
-    const processedBlock = await Promise.any(blockPromises);
-
-    if (!processedBlock) return;
+    await this.waitFor(3000); // Wait for 3 seconds
+    const processedBlock = await log.getBlock();
+    const processedTransaction = await log.getTransaction();
 
     const transactionId = `${log.transactionHash.toLowerCase()}-${chainId}`;
     let transactionEntity = await this.transactionRepository.findOneBy({ id: transactionId });
@@ -288,13 +281,6 @@ export class V2PoolService
       };
       await this.cacheService.hCache('swap', resolvableSwap.hash, resolvableSwap);
     } else if (eventName === this.poolEvents.TRANSFER) {
-      const transactionPromises = connectionInfo.rpcInfos.map((rpcInfo) => {
-        const provider = this.provider(rpcInfo, chainId);
-
-        return provider.getTransaction(log.transactionHash);
-      });
-
-      const transaction = await Promise.any(transactionPromises);
       const resolvableTransfer: IResolvableTransferTransaction = {
         from: args.from,
         to: args.to,
@@ -303,7 +289,7 @@ export class V2PoolService
         hash: transactionEntity.hash,
         amount: args.value.toString(),
         logIndex: log.index,
-        sender: transaction?.from || args.from,
+        sender: processedTransaction.from || args.from,
       };
       await this.cacheService.hCache('transfer', resolvableTransfer.hash, resolvableTransfer);
     } else if (eventName === this.poolEvents.SYNC) {
