@@ -52,6 +52,10 @@ export class Mint {
   @Column({ nullable: true })
   sender?: string;
 
+  @Index()
+  @Column({ nullable: false, default: false })
+  hasBeenProcessed: boolean;
+
   @Column('decimal', {
     nullable: true,
     transformer: {
