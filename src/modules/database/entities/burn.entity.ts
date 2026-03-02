@@ -90,6 +90,10 @@ export class Burn {
   @Column()
   needsComplete: boolean;
 
+  @Index()
+  @Column({ nullable: false, default: false })
+  hasBeenProcessed: boolean;
+
   @Column({ nullable: true })
   feeTo?: string;
 

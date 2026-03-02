@@ -41,6 +41,10 @@ export class Swap {
   @Column()
   from: string;
 
+  @Index()
+  @Column({ nullable: false, default: false })
+  hasBeenProcessed: boolean;
+
   @Column('decimal', {
     precision: 500,
     scale: 5,

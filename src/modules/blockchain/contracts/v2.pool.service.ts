@@ -83,14 +83,9 @@ export class V2PoolService
     @InjectRepository(IndexerEventStatus)
     repository: Repository<IndexerEventStatus>,
     @InjectRepository(Statistics) statisticsRepository: Repository<Statistics>,
-    @InjectRepository(Token)
-    private readonly tokenRepository: Repository<Token>,
     @InjectRepository(Pool) private readonly poolRepository: Repository<Pool>,
     @InjectRepository(Transaction)
     private readonly transactionRepository: Repository<Transaction>,
-    @InjectRepository(Mint) private readonly mintRepository: Repository<Mint>,
-    @InjectRepository(Burn) private readonly burnRepository: Repository<Burn>,
-    @InjectRepository(Swap) private readonly swapRepository: Repository<Swap>,
     @InjectRepository(PoolDayData)
     private readonly poolDayDataRepository: Repository<PoolDayData>,
     @InjectRepository(PoolHourData)
@@ -426,10 +421,9 @@ export class V2PoolService
   handleV2PoolDeployed(payload: ContractDeployEventPayload) {
     const events = Object.values(this.poolEvents);
 
-    for (const eventName of events) {
-      this.EVENT_TRACK_START_BLOCK[eventName] = payload.block;
-      void this.getIndexerEventStatus(payload.address.toLowerCase(), eventName, payload.chainId);
-    }
+    for (const eventName of events)
+      if (!this.EVENT_TRACK_START_BLOCK[eventName])
+        this.EVENT_TRACK_START_BLOCK[eventName] = payload.block - 1;
 
     this.WATCHED_ADDRESSES.add(payload.address.toLowerCase());
     this.WATCHED_ADDRESSES_CHAINS.set(payload.address.toLowerCase(), payload.chainId);
@@ -546,6 +540,8 @@ export class V2PoolService
         mint = await manager.save(mint);
       }
 
+      if (mint.hasBeenProcessed) return mint;
+
       token0.txCount = token0.txCount + 1;
       token1.txCount = token1.txCount + 1;
       poolEntity.txCount = poolEntity.txCount + 1;
@@ -623,6 +619,9 @@ export class V2PoolService
         manager,
       );
 
+      mint.hasBeenProcessed = true;
+      mint = await manager.save(mint);
+
       mintEntity = mint;
       await mintQueryRunner.commitTransaction();
     } catch (error: any) {
@@ -695,6 +694,8 @@ export class V2PoolService
         burn = await manager.save(burn);
       }
 
+      if (burn.hasBeenProcessed) return burn;
+
       token0.txCount = token0.txCount + 1;
       token1.txCount = token1.txCount + 1;
       poolEntity.txCount = poolEntity.txCount + 1;
@@ -736,6 +737,9 @@ export class V2PoolService
         undefined,
         manager,
       );
+
+      burn.hasBeenProcessed = true;
+      burn = await manager.save(burn);
 
       burnEntity = burn;
       await burnQueryRunner.commitTransaction();
@@ -814,6 +818,8 @@ export class V2PoolService
         swap = await manager.save(swap);
       }
 
+      if (swap.hasBeenProcessed) return swap;
+
       poolEntity.volumeETH = poolEntity.volumeETH + amount0ETH + amount1ETH;
       poolEntity.volumeUSD = poolEntity.volumeUSD + amount0USD + amount1USD;
       poolEntity.volumeToken0 = poolEntity.volumeToken0 + amount0Total;
@@ -889,6 +895,9 @@ export class V2PoolService
       token1DayData.dailyVolumeETH = token1DayData.dailyVolumeETH + amount1ETH;
       token1DayData.dailyVolumeUSD = token1DayData.dailyVolumeUSD + amount1USD;
       await manager.save(token1DayData);
+
+      swap.hasBeenProcessed = true;
+      swap = await manager.save(swap);
 
       swapEntity = swap;
       await swapQueryRunner.commitTransaction();
