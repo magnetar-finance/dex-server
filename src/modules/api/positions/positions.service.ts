@@ -29,6 +29,7 @@ export class PositionsService {
       skip: offset,
       take: limit,
       order: { creationBlock: 'DESC' },
+      relations: { pool: true },
     });
   }
 
