@@ -29,7 +29,7 @@ export class PositionsService {
       skip: offset,
       take: limit,
       order: { creationBlock: 'DESC' },
-      relations: { pool: true },
+      relations: { pool: { token0: true, token1: true } },
     });
   }
 
@@ -44,7 +44,7 @@ export class PositionsService {
         chainId,
         account: accountCondition,
       },
-      relations: { pool: true },
+      relations: { pool: { token0: true, token1: true } },
     });
 
     const portfolioValue = positions.reduce((total, position) => {
