@@ -1,0 +1,1123 @@
+/* eslint-disable @typescript-eslint/no-unsafe-call */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+import { id as keccak256, type Log } from 'ethers';
+import { Inject, Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { BaseFactoryDeployedContractService } from './base/base-factory-deployed';
+import { CONNECTION_INFO, DEFAULT_BLOCK_RANGE } from '../../../common/variables';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
+import { CacheService } from '../../cache/cache.service';
+import { IndexerEventStatus } from '../../database/entities/indexer-event-status.entity';
+import { Pool, PoolType } from '../../database/entities/pool.entity';
+import { Token } from '../../database/entities/token.entity';
+import { DataSource, EntityManager, Equal, ILike, Or, Repository } from 'typeorm';
+import { ChainConnectionInfo } from '../interfaces';
+import { OnEvent } from '@nestjs/event-emitter';
+import { type ContractDeployEventPayload, EventTypes } from './types';
+import { V2Pool__factory } from './typechain';
+import { formatEther, formatUnits } from 'ethers';
+import { Transaction } from '../../database/entities/transaction.entity';
+import { Mint } from '../../database/entities/mint.entity';
+import { Burn } from '../../database/entities/burn.entity';
+import { Swap } from '../../database/entities/swap.entity';
+import { OracleService } from './utilities/oracle.service';
+import { PoolDayData } from '../../database/entities/pool-day-data.entity';
+import { PoolHourData } from '../../database/entities/pool-hour-data.entity';
+import { OverallDayData } from '../../database/entities/overall-day-data.entity';
+import { Statistics } from '../../database/entities/statistics.entity';
+import { TokenDayData } from '../../database/entities/token-day-data.entity';
+import { LiquidityPosition } from '../../database/entities/lp-position.entity';
+import { User } from '../../database/entities/user.entity';
+import { Cron, CronExpression } from '@nestjs/schedule';
+
+interface IResolvableTransaction {
+  chainId: number;
+  hash: string;
+  logIndex: number;
+  sender: string;
+}
+
+interface IResolvableMintTransaction extends IResolvableTransaction {
+  amount0: string;
+  amount1: string;
+}
+
+interface IResolvableBurnTransaction extends IResolvableTransaction {
+  amount0: string;
+  amount1: string;
+}
+
+interface IResolvableTransferTransaction extends IResolvableTransaction {
+  token: string;
+  from: string;
+  to: string;
+  amount: string;
+}
+
+interface IResolvableSwapTransaction extends IResolvableTransaction {
+  from: string;
+  to: string;
+  amount0In: string;
+  amount1In: string;
+  amount0Out: string;
+  amount1Out: string;
+  token: string;
+}
+
+@Injectable()
+export class V2PoolService
+  extends BaseFactoryDeployedContractService
+  implements OnModuleInit, OnModuleDestroy
+{
+  private poolEvents = {
+    MINT: keccak256('Mint(address,uint256,uint256)'),
+    SYNC: keccak256('Sync(uint256,uint256)'),
+    SWAP: keccak256('Swap(address,address,uint256,uint256,uint256,uint256)'),
+    TRANSFER: keccak256('Transfer(address,address,uint256)'),
+    BURN: keccak256('Burn(address,address,uint256,uint256)'),
+  };
+
+  constructor(
+    @Inject(CONNECTION_INFO) connectionInfo: ChainConnectionInfo[],
+    cacheService: CacheService,
+    @InjectRepository(IndexerEventStatus)
+    repository: Repository<IndexerEventStatus>,
+    @InjectRepository(Statistics) statisticsRepository: Repository<Statistics>,
+    @InjectRepository(Pool) private readonly poolRepository: Repository<Pool>,
+    @InjectRepository(Transaction)
+    private readonly transactionRepository: Repository<Transaction>,
+    @InjectRepository(PoolDayData)
+    private readonly poolDayDataRepository: Repository<PoolDayData>,
+    @InjectRepository(PoolHourData)
+    private readonly poolHourDataRepository: Repository<PoolHourData>,
+    @InjectRepository(OverallDayData)
+    private readonly overallDayDataRepository: Repository<OverallDayData>,
+    @InjectRepository(TokenDayData)
+    private readonly tokenDayDataRepository: Repository<TokenDayData>,
+    @InjectRepository(LiquidityPosition)
+    private readonly liquidityPositionRepository: Repository<LiquidityPosition>,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
+    private readonly oracle: OracleService,
+    @InjectDataSource() private readonly dataSource: DataSource,
+  ) {
+    super(connectionInfo, cacheService, repository, statisticsRepository);
+  }
+
+  async onModuleInit() {
+    await this.initializeWatchedAddresses();
+  }
+
+  onModuleDestroy() {
+    this.WATCHED_ADDRESSES.clear();
+    this.WATCHED_ADDRESSES_CHAINS.clear();
+  }
+
+  private async initializeWatchedAddresses() {
+    const pools = await this.poolRepository.findBy({
+      poolType: Or(Equal(PoolType.STABLE), Equal(PoolType.VOLATILE)),
+    });
+
+    pools.forEach((pool) => {
+      this.WATCHED_ADDRESSES.add(pool.address.toLowerCase());
+      this.WATCHED_ADDRESSES_CHAINS.set(pool.address.toLowerCase(), pool.chainId);
+    });
+  }
+
+  @Cron(CronExpression.EVERY_10_SECONDS)
+  async sequenceAllChains() {
+    const chainIds = Array.from(new Set(this.WATCHED_ADDRESSES_CHAINS.values()));
+    for (const chainId of chainIds) {
+      await this.sequenceChainEvents(chainId);
+    }
+  }
+
+  private async sequenceChainEvents(chainId: number) {
+    try {
+      await this.waitFor(4000);
+      await this.handleEvents(chainId);
+      await this.resolveTransactionsForChain(chainId);
+    } catch (error: any) {
+      this.logger.error(
+        `[Chain: ${chainId}] Global sequencing error → ${error.message}`,
+        error.stack,
+      );
+      await this.waitFor(5000);
+    }
+  }
+
+  private async handleEvents(chainId: number) {
+    if (!this.cacheService.isConnected()) return;
+    await this.haltUntilOpen(chainId);
+
+    this.logger.log(`[Chain: ${chainId}]: Processing V2 pool events`);
+
+    try {
+      const lastBlockNumber = await this.getLatestBlockNumber(chainId);
+      if (typeof lastBlockNumber === 'undefined') return;
+
+      const events = Object.values(this.poolEvents);
+
+      for (const eventHash of events) {
+        const indexerEventStatus = await this.getIndexerEventStatus('GLOBAL', eventHash, chainId);
+        if (indexerEventStatus.lastBlockNumber >= lastBlockNumber) continue;
+
+        const connectionInfo = this.getConnectionInfo(chainId);
+        const promises = connectionInfo.rpcInfos.map((rpcInfo) => {
+          const provider = this.provider(rpcInfo, chainId);
+          const blockStart = indexerEventStatus.lastBlockNumber + 1;
+          let blockEnd = blockStart + (rpcInfo.queryBlockRange || DEFAULT_BLOCK_RANGE);
+          blockEnd = Math.min(lastBlockNumber, blockEnd);
+
+          return provider.getLogs({
+            fromBlock: blockStart,
+            toBlock: blockEnd,
+            topics: [eventHash],
+          });
+        });
+
+        const logData = await Promise.any(promises);
+        const contractInterface = V2Pool__factory.createInterface();
+
+        this.logger.log(
+          `[Chain: ${chainId}] ${logData.length} matching logs found for ${eventHash}`,
+        );
+
+        for (const log of logData) {
+          const poolAddress = log.address.toLowerCase();
+          if (!this.WATCHED_ADDRESSES.has(poolAddress)) continue;
+
+          const parsedLog = contractInterface.parseLog(log);
+          if (!parsedLog) continue;
+
+          this.logger.log(`[Chain: ${chainId}] Sequencing ${eventHash} on pool ${poolAddress}`);
+          await this.processEvent(eventHash, poolAddress, chainId, log, parsedLog.args);
+        }
+
+        // Update status after processing the chunk
+        const processedMaxBlock =
+          logData.length > 0
+            ? logData.reduce(
+                (max, l) => (l.blockNumber > max ? l.blockNumber : max),
+                logData[0].blockNumber,
+              )
+            : indexerEventStatus.lastBlockNumber;
+        indexerEventStatus.lastBlockNumber = Math.max(
+          indexerEventStatus.lastBlockNumber,
+          processedMaxBlock,
+        );
+        await this.indexerEventStatusRepository.save(indexerEventStatus);
+      }
+    } catch (error: any) {
+      this.logger.error(
+        `[Chain: ${chainId}] Error occurred while sequencing event: ${error.stack}`,
+      );
+    } finally {
+      await this.releaseResource(chainId);
+    }
+  }
+
+  private async processEvent(
+    eventName: string,
+    address: string,
+    chainId: number,
+    log: Log,
+    args: any,
+  ) {
+    await this.waitFor(3000); // Wait for 3 seconds
+    const processedBlock = await log.getBlock();
+    const processedTransaction = await log.getTransaction();
+
+    const transactionId = `${log.transactionHash.toLowerCase()}-${chainId}`;
+    let transactionEntity = await this.transactionRepository.findOneBy({ id: transactionId });
+
+    if (transactionEntity === null) {
+      const queryRunner = this.dataSource.createQueryRunner();
+      await queryRunner.connect();
+      await queryRunner.startTransaction();
+      try {
+        const txRepo = queryRunner.manager.getRepository(Transaction);
+        const created = txRepo.create({
+          hash: log.transactionHash.toLowerCase(),
+          block: log.blockNumber,
+          timestamp: processedBlock.timestamp,
+          chainId,
+        });
+        transactionEntity = await queryRunner.manager.save(created);
+        await queryRunner.commitTransaction();
+      } catch (error: any) {
+        await queryRunner.rollbackTransaction();
+        throw error;
+      } finally {
+        await queryRunner.release();
+      }
+    }
+
+    if (eventName === this.poolEvents.MINT) {
+      const resolvableMint: IResolvableMintTransaction = {
+        sender: args.sender,
+        amount0: args.amount0.toString(),
+        amount1: args.amount1.toString(),
+        chainId,
+        hash: transactionEntity.hash,
+        logIndex: log.index,
+      };
+      await this.cacheService.hCache('mint', resolvableMint.hash, resolvableMint);
+    } else if (eventName === this.poolEvents.BURN) {
+      const resolvableBurn: IResolvableBurnTransaction = {
+        sender: args.sender,
+        amount0: args.amount0.toString(),
+        amount1: args.amount1.toString(),
+        chainId,
+        hash: transactionEntity.hash,
+        logIndex: log.index,
+      };
+      await this.cacheService.hCache('burn', resolvableBurn.hash, resolvableBurn);
+    } else if (eventName === this.poolEvents.SWAP) {
+      const resolvableSwap: IResolvableSwapTransaction = {
+        from: args.sender,
+        to: args.to,
+        token: address.toLowerCase(),
+        chainId,
+        hash: transactionEntity.hash,
+        amount0In: args.amount0In.toString(),
+        amount1In: args.amount1In.toString(),
+        amount0Out: args.amount0Out.toString(),
+        amount1Out: args.amount1Out.toString(),
+        logIndex: log.index,
+        sender: args.sender,
+      };
+      await this.cacheService.hCache('swap', resolvableSwap.hash, resolvableSwap);
+    } else if (eventName === this.poolEvents.TRANSFER) {
+      const resolvableTransfer: IResolvableTransferTransaction = {
+        from: args.from,
+        to: args.to,
+        token: address.toLowerCase(),
+        chainId,
+        hash: transactionEntity.hash,
+        amount: args.value.toString(),
+        logIndex: log.index,
+        sender: processedTransaction.from || args.from,
+      };
+      await this.cacheService.hCache('transfer', resolvableTransfer.hash, resolvableTransfer);
+    } else if (eventName === this.poolEvents.SYNC) {
+      await this.processSync(address, chainId, args.reserve0 as bigint, args.reserve1 as bigint);
+    }
+
+    this.updateChainMetric(chainId);
+  }
+
+  private async processSync(address: string, chainId: number, reserve0: bigint, reserve1: bigint) {
+    const poolId = `${address.toLowerCase()}-${chainId}`;
+    const poolEntity = await this.poolRepository.findOneOrFail({
+      where: { id: poolId },
+      relations: { token0: true, token1: true },
+    });
+
+    const token0 = await this.loadTokenPrice(poolEntity.token0);
+    const token1 = await this.loadTokenPrice(poolEntity.token1);
+
+    const statistics = await this.loadStatistics(chainId);
+    statistics.totalVolumeLockedETH = statistics.totalVolumeLockedETH - poolEntity.reserveETH;
+
+    token0.totalLiquidity = token0.totalLiquidity - poolEntity.reserve0;
+    token1.totalLiquidity = token1.totalLiquidity - poolEntity.reserve1;
+
+    poolEntity.reserve0 = parseFloat(formatUnits(reserve0, token0.decimals));
+    poolEntity.reserve1 = parseFloat(formatUnits(reserve1, token1.decimals));
+
+    if (poolEntity.reserve1 > 0) poolEntity.token0Price = poolEntity.reserve0 / poolEntity.reserve1;
+    else poolEntity.token0Price = 0;
+
+    if (poolEntity.reserve0 > 0) poolEntity.token1Price = poolEntity.reserve1 / poolEntity.reserve0;
+    else poolEntity.token1Price = 0;
+
+    poolEntity.reserveETH =
+      poolEntity.reserve0 * token0.derivedETH + poolEntity.reserve1 * token1.derivedETH;
+    poolEntity.reserveUSD =
+      poolEntity.reserve0 * token0.derivedUSD + poolEntity.reserve1 * token1.derivedUSD;
+
+    statistics.totalVolumeLockedETH = statistics.totalVolumeLockedETH + poolEntity.reserveETH;
+    statistics.totalVolumeLockedUSD = statistics.totalVolumeLockedUSD + poolEntity.reserveUSD;
+
+    token0.totalLiquidity = token0.totalLiquidity + poolEntity.reserve0;
+    token0.totalLiquidityETH = token0.totalLiquidity * token0.derivedETH;
+    token0.totalLiquidityUSD = token0.totalLiquidity * token0.derivedUSD;
+
+    token1.totalLiquidity = token1.totalLiquidity + poolEntity.reserve1;
+    token1.totalLiquidityETH = token1.totalLiquidity * token1.derivedETH;
+    token1.totalLiquidityUSD = token1.totalLiquidity * token1.derivedUSD;
+
+    const syncQueryRunner = this.dataSource.createQueryRunner();
+    await syncQueryRunner.connect();
+    await syncQueryRunner.startTransaction();
+    try {
+      await Promise.all([
+        syncQueryRunner.manager.save(poolEntity),
+        syncQueryRunner.manager.save(statistics),
+        syncQueryRunner.manager.save(token0),
+        syncQueryRunner.manager.save(token1),
+      ]);
+      await syncQueryRunner.commitTransaction();
+    } catch (error: any) {
+      await syncQueryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await syncQueryRunner.release();
+    }
+  }
+
+  private async resolveTransactionsForChain(chainId: number) {
+    if (!this.cacheService.isConnected()) return;
+
+    // Fetch all cached transactions once per chain
+    const cachedTransfers = await this.cacheService.hObtainAll('transfer');
+    const cachedSwaps = await this.cacheService.hObtainAll('swap');
+
+    // Group transfers by token for this chain
+    const transfersByToken: Record<string, IResolvableTransferTransaction[]> = {};
+    for (const transfer of Object.values(cachedTransfers)) {
+      const data = JSON.parse(transfer) as IResolvableTransferTransaction;
+      if (data.chainId === chainId) {
+        const token = data.token.toLowerCase();
+        if (!transfersByToken[token]) transfersByToken[token] = [];
+        transfersByToken[token].push(data);
+      }
+    }
+
+    // Group swaps by token for this chain
+    const swapsByToken: Record<string, { hash: string; data: IResolvableSwapTransaction }[]> = {};
+    for (const [hash, stringValue] of Object.entries(cachedSwaps)) {
+      const data = JSON.parse(stringValue) as IResolvableSwapTransaction;
+      if (data.chainId === chainId) {
+        const token = data.token.toLowerCase();
+        if (!swapsByToken[token]) swapsByToken[token] = [];
+        swapsByToken[token].push({ hash, data });
+      }
+    }
+
+    // Process only pools that have pending events or are watched
+    const tokensWithEvents = new Set([
+      ...Object.keys(transfersByToken),
+      ...Object.keys(swapsByToken),
+    ]);
+
+    for (const token of tokensWithEvents) {
+      if (
+        this.WATCHED_ADDRESSES.has(token) &&
+        this.WATCHED_ADDRESSES_CHAINS.get(token) === chainId
+      ) {
+        await this.resolveTransactions(
+          token,
+          chainId,
+          transfersByToken[token] || [],
+          swapsByToken[token] || [],
+        );
+      }
+    }
+  }
+
+  @OnEvent(EventTypes.V2_POOL_DEPLOYED)
+  handleV2PoolDeployed(payload: ContractDeployEventPayload) {
+    const events = Object.values(this.poolEvents);
+
+    for (const eventName of events)
+      if (!this.EVENT_TRACK_START_BLOCK[eventName])
+        this.EVENT_TRACK_START_BLOCK[eventName] = payload.block - 1;
+
+    this.WATCHED_ADDRESSES.add(payload.address.toLowerCase());
+    this.WATCHED_ADDRESSES_CHAINS.set(payload.address.toLowerCase(), payload.chainId);
+  }
+
+  private async resolveTransactions(
+    address: string,
+    chainId: number,
+    transfers: IResolvableTransferTransaction[],
+    swaps: { hash: string; data: IResolvableSwapTransaction }[],
+  ) {
+    this.logger.log(`[Chain: ${chainId}] Attempting V2 transaction resolutions for ${address}...`);
+
+    // Find cached transfers matching parameters
+    const poolTransfers = transfers.filter(
+      (transfer) => transfer.token.toLowerCase() === address.toLowerCase(),
+    );
+
+    // Find equivalent mints or burns
+    for (const transfer of poolTransfers) {
+      const resolvableMint = await this.cacheService.hObtain<IResolvableMintTransaction>(
+        'mint',
+        transfer.hash,
+      );
+
+      if (resolvableMint !== null) {
+        await this.resolveMint(transfer, resolvableMint);
+        await this.cacheService.hDecache('mint', transfer.hash);
+        await this.cacheService.hDecache('transfer', transfer.hash);
+      }
+
+      const resolvableBurn = await this.cacheService.hObtain<IResolvableBurnTransaction>(
+        'burn',
+        transfer.hash,
+      );
+
+      if (resolvableBurn !== null) {
+        await this.resolveBurn(transfer, resolvableBurn);
+        await this.cacheService.hDecache('burn', transfer.hash);
+        await this.cacheService.hDecache('transfer', transfer.hash);
+      }
+    }
+
+    // Find cached swaps matching parameters
+    const poolSwaps = swaps.filter(
+      (swap) => swap.data.token.toLowerCase() === address.toLowerCase(),
+    );
+
+    for (const swap of poolSwaps) {
+      await this.resolveSwap(swap.data);
+      await this.cacheService.hDecache('swap', swap.hash);
+    }
+  }
+
+  private async resolveMint(
+    transferEntry: IResolvableTransferTransaction,
+    mintEntry: IResolvableMintTransaction,
+  ) {
+    await this.haltUntilOpen(transferEntry.chainId);
+    const poolId = `${transferEntry.token}-${transferEntry.chainId}`;
+    const poolEntity = await this.poolRepository.findOneOrFail({
+      where: { id: poolId },
+      relations: { token0: true, token1: true },
+    });
+    await this.waitFor(500);
+
+    const token0 = await this.loadTokenPrice(poolEntity.token0);
+    const token1 = await this.loadTokenPrice(poolEntity.token1);
+
+    const txId = `${transferEntry.hash}-${transferEntry.chainId}`;
+    const transactionEntity = await this.transactionRepository.findOneByOrFail({
+      id: txId,
+    });
+
+    await this.waitFor(500);
+
+    const amount0 = parseFloat(formatUnits(mintEntry.amount0, token0.decimals));
+    const amount1 = parseFloat(formatUnits(mintEntry.amount1, token1.decimals));
+    const amount0USD = amount0 * token0.derivedUSD;
+    const amount1USD = amount1 * token1.derivedUSD;
+    const amountUSD = amount0USD + amount1USD;
+
+    const amount0ETH = amount0 * token0.derivedETH;
+    const amount1ETH = amount1 * token1.derivedETH;
+    const amountETH = amount0ETH + amount1ETH;
+    const liquidity = parseFloat(formatEther(transferEntry.amount));
+
+    const mintQueryRunner = this.dataSource.createQueryRunner();
+    await mintQueryRunner.connect();
+    await mintQueryRunner.startTransaction();
+    let mintEntity: Mint;
+    try {
+      const manager = mintQueryRunner.manager;
+      const mintRepo = manager.getRepository(Mint);
+
+      let mint = await mintRepo.findOneBy({
+        id: `mint-${transactionEntity.hash.toLowerCase()}-${transactionEntity.chainId}`,
+      });
+
+      if (mint === null) {
+        mint = mintRepo.create({
+          transaction: transactionEntity,
+          to: transferEntry.to,
+          chainId: transactionEntity.chainId,
+          pool: poolEntity,
+          amount0,
+          amount1,
+          amountUSD,
+          sender: mintEntry.sender,
+          logIndex: mintEntry.logIndex,
+          timestamp: transactionEntity.timestamp,
+          liquidity,
+        });
+        mint = await manager.save(mint);
+      }
+
+      if (mint.hasBeenProcessed) return mint;
+
+      token0.txCount = token0.txCount + 1;
+      token1.txCount = token1.txCount + 1;
+      poolEntity.txCount = poolEntity.txCount + 1;
+      poolEntity.totalSupply = poolEntity.totalSupply + liquidity;
+
+      const [_t0, _t1, _pool] = await Promise.all([
+        manager.save(token0),
+        manager.save(token1),
+        manager.save(poolEntity),
+      ]);
+
+      const statistics = await this.loadStatistics(transactionEntity.chainId);
+      statistics.txCount = statistics.txCount + 1;
+      await manager.save(statistics);
+
+      const overallDayData = await this.updateOverallDayData(
+        transactionEntity.timestamp,
+        transactionEntity.chainId,
+        manager,
+      );
+      const poolDayData = await this.updatePoolDayData(
+        transactionEntity.timestamp,
+        poolEntity.address.toLowerCase(),
+        manager,
+      );
+      const poolHourData = await this.updatePoolHourData(
+        transactionEntity.timestamp,
+        poolEntity.address.toLowerCase(),
+        manager,
+      );
+      const token0DayData = await this.updateTokenDayData(
+        _t0,
+        transactionEntity.timestamp,
+        manager,
+      );
+      const token1DayData = await this.updateTokenDayData(
+        _t1,
+        transactionEntity.timestamp,
+        manager,
+      );
+
+      overallDayData.feesUSD = overallDayData.feesUSD + _pool.totalFeesUSD;
+      overallDayData.volumeETH = overallDayData.volumeETH + amountETH;
+      overallDayData.volumeUSD = overallDayData.volumeUSD + amountUSD;
+      await manager.save(overallDayData);
+
+      poolDayData.dailyVolumeToken0 = poolDayData.dailyVolumeToken0 + amount0;
+      poolDayData.dailyVolumeToken1 = poolDayData.dailyVolumeToken1 + amount1;
+      poolDayData.dailyVolumeETH = poolDayData.dailyVolumeETH + amountETH;
+      poolDayData.dailyVolumeUSD = poolDayData.dailyVolumeUSD + amountUSD;
+      await manager.save(poolDayData);
+
+      poolHourData.hourlyVolumeToken0 = poolHourData.hourlyVolumeToken0 + amount0;
+      poolHourData.hourlyVolumeToken1 = poolHourData.hourlyVolumeToken1 + amount1;
+      poolHourData.hourlyVolumeETH = poolHourData.hourlyVolumeETH + amountETH;
+      poolHourData.hourlyVolumeUSD = poolHourData.hourlyVolumeUSD + amountUSD;
+      await manager.save(poolHourData);
+
+      token0DayData.dailyVolumeToken = token0DayData.dailyVolumeToken + amount0;
+      token0DayData.dailyVolumeETH = token0DayData.dailyVolumeETH + amount0ETH;
+      token0DayData.dailyVolumeUSD = token0DayData.dailyVolumeUSD + amount0USD;
+      await manager.save(token0DayData);
+
+      token1DayData.dailyVolumeToken = token1DayData.dailyVolumeToken + amount1;
+      token1DayData.dailyVolumeETH = token1DayData.dailyVolumeETH + amount1ETH;
+      token1DayData.dailyVolumeUSD = token1DayData.dailyVolumeUSD + amount1USD;
+      await manager.save(token1DayData);
+
+      await this.updateLiquidityPosition(
+        poolEntity.id,
+        transferEntry.to,
+        liquidity,
+        transactionEntity.block,
+        transactionEntity.hash,
+        manager,
+      );
+
+      mint.hasBeenProcessed = true;
+      mint = await manager.save(mint);
+
+      mintEntity = mint;
+      await mintQueryRunner.commitTransaction();
+    } catch (error: any) {
+      await mintQueryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await mintQueryRunner.release();
+    }
+
+    await this.releaseResource(transferEntry.chainId);
+
+    return mintEntity;
+  }
+
+  private async resolveBurn(
+    transferEntry: IResolvableTransferTransaction,
+    burnEntry: IResolvableBurnTransaction,
+  ) {
+    await this.haltUntilOpen(transferEntry.chainId);
+    const poolId = `${transferEntry.token}-${transferEntry.chainId}`;
+    const poolEntity = await this.poolRepository.findOneOrFail({
+      where: { id: poolId },
+      relations: { token0: true, token1: true },
+    });
+    await this.waitFor(500);
+
+    const token0 = await this.loadTokenPrice(poolEntity.token0);
+    const token1 = await this.loadTokenPrice(poolEntity.token1);
+
+    const txId = `${transferEntry.hash}-${transferEntry.chainId}`;
+    const transactionEntity = await this.transactionRepository.findOneByOrFail({
+      id: txId,
+    });
+
+    await this.waitFor(500);
+
+    const amount0 = parseFloat(formatUnits(burnEntry.amount0, token0.decimals));
+    const amount1 = parseFloat(formatUnits(burnEntry.amount1, token1.decimals));
+    const amount0USD = amount0 * token0.derivedUSD;
+    const amount1USD = amount1 * token1.derivedUSD;
+    const amountUSD = amount0USD + amount1USD;
+    const liquidity = parseFloat(formatEther(transferEntry.amount));
+
+    const burnQueryRunner = this.dataSource.createQueryRunner();
+    await burnQueryRunner.connect();
+    await burnQueryRunner.startTransaction();
+    let burnEntity: Burn;
+    try {
+      const manager = burnQueryRunner.manager;
+      const burnRepo = manager.getRepository(Burn);
+
+      let burn = await burnRepo.findOneBy({
+        id: `burn-${transactionEntity.hash.toLowerCase()}-${transactionEntity.chainId}`,
+      });
+
+      if (burn === null) {
+        burn = burnRepo.create({
+          transaction: transactionEntity,
+          to: transferEntry.to,
+          chainId: transactionEntity.chainId,
+          pool: poolEntity,
+          amount0,
+          amount1,
+          amountUSD,
+          sender: burnEntry.sender,
+          logIndex: burnEntry.logIndex,
+          timestamp: transactionEntity.timestamp,
+          liquidity,
+        });
+        burn = await manager.save(burn);
+      }
+
+      if (burn.hasBeenProcessed) return burn;
+
+      token0.txCount = token0.txCount + 1;
+      token1.txCount = token1.txCount + 1;
+      poolEntity.txCount = poolEntity.txCount + 1;
+      poolEntity.totalSupply = poolEntity.totalSupply - liquidity;
+
+      const [_t0, _t1] = await Promise.all([
+        manager.save(token0),
+        manager.save(token1),
+        manager.save(poolEntity),
+      ]);
+
+      const statistics = await this.loadStatistics(transactionEntity.chainId);
+      statistics.txCount = statistics.txCount + 1;
+      await manager.save(statistics);
+
+      await this.updateOverallDayData(
+        transactionEntity.timestamp,
+        transactionEntity.chainId,
+        manager,
+      );
+      await this.updatePoolDayData(
+        transactionEntity.timestamp,
+        poolEntity.address.toLowerCase(),
+        manager,
+      );
+      await this.updatePoolHourData(
+        transactionEntity.timestamp,
+        poolEntity.address.toLowerCase(),
+        manager,
+      );
+      await this.updateTokenDayData(_t0, transactionEntity.timestamp, manager);
+      await this.updateTokenDayData(_t1, transactionEntity.timestamp, manager);
+
+      await this.updateLiquidityPosition(
+        poolEntity.id,
+        transferEntry.to,
+        -liquidity,
+        undefined,
+        undefined,
+        manager,
+      );
+
+      burn.hasBeenProcessed = true;
+      burn = await manager.save(burn);
+
+      burnEntity = burn;
+      await burnQueryRunner.commitTransaction();
+    } catch (error: any) {
+      await burnQueryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await burnQueryRunner.release();
+    }
+
+    await this.releaseResource(transferEntry.chainId);
+
+    return burnEntity;
+  }
+
+  private async resolveSwap(swapEntry: IResolvableSwapTransaction) {
+    await this.haltUntilOpen(swapEntry.chainId);
+
+    const poolId = `${swapEntry.token}-${swapEntry.chainId}`;
+    const poolEntity = await this.poolRepository.findOneOrFail({
+      where: { id: poolId },
+      relations: { token0: true, token1: true },
+    });
+
+    await this.waitFor(500);
+
+    let token0 = await this.loadTokenPrice(poolEntity.token0);
+    let token1 = await this.loadTokenPrice(poolEntity.token1);
+
+    const txId = `${swapEntry.hash}-${swapEntry.chainId}`;
+    const transactionEntity = await this.transactionRepository.findOneByOrFail({
+      id: txId,
+    });
+
+    await this.waitFor(500);
+
+    const amount0In = parseFloat(formatUnits(swapEntry.amount0In, token0.decimals));
+    const amount1In = parseFloat(formatUnits(swapEntry.amount1In, token1.decimals));
+    const amount0Out = parseFloat(formatUnits(swapEntry.amount0Out, token0.decimals));
+    const amount1Out = parseFloat(formatUnits(swapEntry.amount1Out, token1.decimals));
+    const amount0Total = amount0In + amount0Out;
+    const amount1Total = amount1In + amount1Out;
+    const amount0ETH = amount0Total * token0.derivedETH;
+    const amount0USD = amount0Total * token0.derivedUSD;
+    const amount1ETH = amount1Total * token1.derivedETH;
+    const amount1USD = amount1Total * token1.derivedUSD;
+
+    const swapQueryRunner = this.dataSource.createQueryRunner();
+    await swapQueryRunner.connect();
+    await swapQueryRunner.startTransaction();
+    let swapEntity: Swap;
+    try {
+      const manager = swapQueryRunner.manager;
+      const swapRepo = manager.getRepository(Swap);
+
+      let swap = await swapRepo.findOneBy({
+        id: `swap-${transactionEntity.hash.toLowerCase()}-${transactionEntity.chainId}`,
+      });
+
+      if (swap === null) {
+        swap = swapRepo.create({
+          transaction: transactionEntity,
+          timestamp: transactionEntity.timestamp,
+          pool: poolEntity,
+          amount0In,
+          amount0Out,
+          amount1In,
+          amount1Out,
+          amountUSD: amount0USD + amount1USD,
+          chainId: transactionEntity.chainId,
+          from: swapEntry.from,
+          to: swapEntry.to,
+          logIndex: swapEntry.logIndex,
+          sender: swapEntry.sender,
+        });
+        swap = await manager.save(swap);
+      }
+
+      if (swap.hasBeenProcessed) return swap;
+
+      poolEntity.volumeETH = poolEntity.volumeETH + amount0ETH + amount1ETH;
+      poolEntity.volumeUSD = poolEntity.volumeUSD + amount0USD + amount1USD;
+      poolEntity.volumeToken0 = poolEntity.volumeToken0 + amount0Total;
+      poolEntity.volumeToken1 = poolEntity.volumeToken1 + amount1Total;
+      poolEntity.txCount = poolEntity.txCount + 1;
+      await manager.save(poolEntity);
+
+      token0.tradeVolume = token0.tradeVolume + amount0Total;
+      token0.tradeVolumeUSD = token0.tradeVolumeUSD + amount0USD;
+      token0.txCount = token0.txCount + 1;
+      token0 = await manager.save(token0);
+
+      token1.tradeVolume = token1.tradeVolume + amount1Total;
+      token1.tradeVolumeUSD = token1.tradeVolumeUSD + amount1USD;
+      token1.txCount = token1.txCount + 1;
+      token1 = await manager.save(token1);
+
+      const statistics = await this.loadStatistics(transactionEntity.chainId);
+      statistics.totalTradeVolumeETH = statistics.totalTradeVolumeETH + amount0ETH + amount1ETH;
+      statistics.totalTradeVolumeUSD = statistics.totalTradeVolumeUSD + amount0USD + amount1USD;
+      statistics.txCount = statistics.txCount + 1;
+      await manager.save(statistics);
+
+      const overallDayData = await this.updateOverallDayData(
+        transactionEntity.timestamp,
+        transactionEntity.chainId,
+        manager,
+      );
+      const poolDayData = await this.updatePoolDayData(
+        transactionEntity.timestamp,
+        poolEntity.address.toLowerCase(),
+        manager,
+      );
+      const poolHourData = await this.updatePoolHourData(
+        transactionEntity.timestamp,
+        poolEntity.address.toLowerCase(),
+        manager,
+      );
+      const token0DayData = await this.updateTokenDayData(
+        token0,
+        transactionEntity.timestamp,
+        manager,
+      );
+      const token1DayData = await this.updateTokenDayData(
+        token1,
+        transactionEntity.timestamp,
+        manager,
+      );
+
+      overallDayData.feesUSD = overallDayData.feesUSD + poolEntity.totalFeesUSD;
+      overallDayData.volumeETH = overallDayData.volumeETH + amount0ETH + amount1ETH;
+      overallDayData.volumeUSD = overallDayData.volumeUSD + amount0USD + amount1USD;
+      await manager.save(overallDayData);
+
+      poolDayData.dailyVolumeToken0 = poolDayData.dailyVolumeToken0 + amount0Total;
+      poolDayData.dailyVolumeToken1 = poolDayData.dailyVolumeToken1 + amount1Total;
+      poolDayData.dailyVolumeETH = poolDayData.dailyVolumeETH + amount0ETH + amount1ETH;
+      poolDayData.dailyVolumeUSD = poolDayData.dailyVolumeUSD + amount0USD + amount1USD;
+      await manager.save(poolDayData);
+
+      poolHourData.hourlyVolumeToken0 = poolHourData.hourlyVolumeToken0 + amount0Total;
+      poolHourData.hourlyVolumeToken1 = poolHourData.hourlyVolumeToken1 + amount1Total;
+      poolHourData.hourlyVolumeETH = poolHourData.hourlyVolumeETH + amount0ETH + amount1ETH;
+      poolHourData.hourlyVolumeUSD = poolHourData.hourlyVolumeUSD + amount0USD + amount1USD;
+      await manager.save(poolHourData);
+
+      token0DayData.dailyVolumeToken = token0DayData.dailyVolumeToken + amount0Total;
+      token0DayData.dailyVolumeETH = token0DayData.dailyVolumeETH + amount0ETH;
+      token0DayData.dailyVolumeUSD = token0DayData.dailyVolumeUSD + amount0USD;
+      await manager.save(token0DayData);
+
+      token1DayData.dailyVolumeToken = token1DayData.dailyVolumeToken + amount1Total;
+      token1DayData.dailyVolumeETH = token1DayData.dailyVolumeETH + amount1ETH;
+      token1DayData.dailyVolumeUSD = token1DayData.dailyVolumeUSD + amount1USD;
+      await manager.save(token1DayData);
+
+      swap.hasBeenProcessed = true;
+      swap = await manager.save(swap);
+
+      swapEntity = swap;
+      await swapQueryRunner.commitTransaction();
+    } catch (error: any) {
+      await swapQueryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await swapQueryRunner.release();
+    }
+
+    await this.releaseResource(swapEntry.chainId);
+
+    return swapEntity;
+  }
+
+  private async loadTokenPrice(token: Token): Promise<Token> {
+    token.derivedUSD = await this.oracle.getPriceInUSD(token.address, token.chainId);
+    token.derivedETH = await this.oracle.getPriceInETH(token.address, token.chainId);
+
+    return token;
+  }
+
+  private async updateLiquidityPosition(
+    poolId: string,
+    account: string,
+    amount: number,
+    blockNumber?: number,
+    transaction?: string,
+    manager?: EntityManager,
+  ) {
+    const poolRepo = manager ? manager.getRepository(Pool) : this.poolRepository;
+    const userRepo = manager ? manager.getRepository(User) : this.userRepository;
+    const lpRepo = manager
+      ? manager.getRepository(LiquidityPosition)
+      : this.liquidityPositionRepository;
+
+    const pool = await poolRepo.findOneByOrFail({ id: poolId });
+    let user = await userRepo.findOneBy({ id: account.toLowerCase() });
+
+    if (user === null) {
+      user = userRepo.create({ address: account });
+      user = await userRepo.save(user);
+    }
+
+    let lpPosition = await lpRepo.findOneBy({
+      pool: { id: pool.id },
+      account: { id: user.id },
+    });
+
+    if (lpPosition === null) {
+      lpPosition = lpRepo.create({
+        account: user,
+        pool,
+        position: 0,
+        creationBlock: blockNumber,
+        creationTransaction: transaction,
+        chainId: pool.chainId,
+      });
+
+      lpPosition = await lpRepo.save(lpPosition);
+    }
+
+    lpPosition.position = lpPosition.position + amount;
+    return lpRepo.save(lpPosition);
+  }
+
+  private async updateOverallDayData(timestamp: number, chainId: number, manager?: EntityManager) {
+    const repo = manager ? manager.getRepository(OverallDayData) : this.overallDayDataRepository;
+    const statistics = await this.loadStatistics(chainId);
+    const dayId = Math.floor(timestamp / 86400);
+    const dataId = `${dayId.toString()}-${chainId}`;
+    const dayStartTimestamp = dayId * 86400;
+
+    let overallDayData = await repo.findOneBy({ id: dataId });
+    if (overallDayData === null) {
+      overallDayData = repo.create({
+        id: dayId.toString(),
+        feesUSD: 0,
+        txCount: 0,
+        date: dayStartTimestamp,
+        volumeETH: 0,
+        volumeUSD: 0,
+        liquidityETH: 0,
+        liquidityUSD: 0,
+        totalTradeVolumeETH: 0,
+        totalTradeVolumeUSD: 0,
+        chainId,
+      });
+
+      overallDayData = await repo.save(overallDayData);
+    }
+
+    overallDayData.liquidityUSD = statistics.totalVolumeLockedUSD;
+    overallDayData.liquidityETH = statistics.totalVolumeLockedETH;
+    overallDayData.totalTradeVolumeETH = statistics.totalTradeVolumeETH;
+    overallDayData.totalTradeVolumeUSD = statistics.totalTradeVolumeUSD;
+    overallDayData.txCount = overallDayData.txCount + 1;
+    return repo.save(overallDayData);
+  }
+
+  private async updatePoolDayData(timestamp: number, poolAddress: string, manager?: EntityManager) {
+    const repo = manager ? manager.getRepository(PoolDayData) : this.poolDayDataRepository;
+    const poolRepo = manager ? manager.getRepository(Pool) : this.poolRepository;
+    const dayId = Math.floor(timestamp / 86400);
+    const dayStartTimestamp = dayId * 86400;
+    const dayPoolId = `${poolAddress}-${dayId.toString()}`;
+    const pool = await poolRepo.findOneByOrFail({
+      address: ILike(`%${poolAddress.toLowerCase()}%`),
+    });
+
+    let poolDayData = await repo.findOneBy({ id: dayPoolId });
+
+    if (poolDayData === null) {
+      poolDayData = repo.create({
+        id: dayPoolId,
+        date: dayStartTimestamp,
+        dailyTxns: 0,
+        dailyVolumeETH: 0,
+        dailyVolumeToken0: 0,
+        dailyVolumeToken1: 0,
+        dailyVolumeUSD: 0,
+        pool,
+        totalSupply: 0,
+        reserve0: 0,
+        reserve1: 0,
+        reserveETH: 0,
+        reserveUSD: 0,
+      });
+
+      poolDayData = await repo.save(poolDayData);
+    }
+
+    poolDayData.totalSupply = pool.totalSupply;
+    poolDayData.reserve0 = pool.reserve0;
+    poolDayData.reserve1 = pool.reserve1;
+    poolDayData.reserveETH = pool.reserveETH;
+    poolDayData.reserveUSD = pool.reserveUSD;
+    poolDayData.dailyTxns = poolDayData.dailyTxns + 1;
+
+    return repo.save(poolDayData);
+  }
+
+  private async updatePoolHourData(
+    timestamp: number,
+    poolAddress: string,
+    manager?: EntityManager,
+  ) {
+    const repo = manager ? manager.getRepository(PoolHourData) : this.poolHourDataRepository;
+    const poolRepo = manager ? manager.getRepository(Pool) : this.poolRepository;
+    const hourIndex = Math.floor(timestamp / 3600);
+    const hourStartUnix = hourIndex * 3600;
+    const hourPoolId = `${poolAddress}-${hourIndex.toString()}`;
+    const pool = await poolRepo.findOneByOrFail({
+      address: ILike(`%${poolAddress.toLowerCase()}%`),
+    });
+
+    let poolHourData = await repo.findOneBy({ id: hourPoolId });
+    if (poolHourData === null) {
+      poolHourData = repo.create({
+        id: hourPoolId,
+        hourStartUnix,
+        pool,
+        hourlyTxns: 0,
+        hourlyVolumeETH: 0,
+        hourlyVolumeToken0: 0,
+        hourlyVolumeToken1: 0,
+        hourlyVolumeUSD: 0,
+        totalSupply: 0,
+        reserve0: 0,
+        reserve1: 0,
+        reserveETH: 0,
+        reserveUSD: 0,
+      });
+
+      poolHourData = await repo.save(poolHourData);
+    }
+
+    poolHourData.totalSupply = pool.totalSupply;
+    poolHourData.reserve0 = pool.reserve0;
+    poolHourData.reserve1 = pool.reserve1;
+    poolHourData.reserveETH = pool.reserveETH;
+    poolHourData.reserveUSD = pool.reserveUSD;
+    poolHourData.hourlyTxns = poolHourData.hourlyTxns + 1;
+
+    return repo.save(poolHourData);
+  }
+
+  private async updateTokenDayData(token: Token, timestamp: number, manager?: EntityManager) {
+    const repo = manager ? manager.getRepository(TokenDayData) : this.tokenDayDataRepository;
+    const dayId = Math.floor(timestamp / 86400);
+    const dayStartTimestamp = dayId * 86400;
+    const tokenDayId = `${token.address.toLowerCase()}-${dayId.toString()}`;
+
+    let tokenDayData = await repo.findOneBy({ id: tokenDayId });
+    if (tokenDayData === null) {
+      tokenDayData = repo.create({
+        id: tokenDayId,
+        date: dayStartTimestamp,
+        token,
+        dailyTxns: 0,
+        dailyVolumeETH: 0,
+        dailyVolumeToken: 0,
+        dailyVolumeUSD: 0,
+        priceETH: 0,
+        priceUSD: 0,
+        totalLiquidityETH: 0,
+        totalLiquidityToken: 0,
+        totalLiquidityUSD: 0,
+      });
+
+      tokenDayData = await repo.save(tokenDayData);
+    }
+
+    tokenDayData.priceUSD = token.derivedUSD;
+    tokenDayData.priceETH = token.derivedETH;
+    tokenDayData.totalLiquidityToken = token.totalLiquidity;
+    tokenDayData.totalLiquidityETH = token.totalLiquidity * token.derivedETH;
+    tokenDayData.totalLiquidityUSD = token.totalLiquidity * token.derivedUSD;
+    tokenDayData.dailyTxns = tokenDayData.dailyTxns + 1;
+
+    return repo.save(tokenDayData);
+  }
+}

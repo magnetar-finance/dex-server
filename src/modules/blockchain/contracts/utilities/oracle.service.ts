@@ -1,0 +1,126 @@
+import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
+import { ChainConnectionInfo, RPCInfo } from '../../interfaces';
+import { ChainIds, CONNECTION_INFO } from '../../../../common/variables';
+import { formatUnits, JsonRpcProvider, parseUnits } from 'ethers';
+import { Erc20__factory, Oracle__factory } from '../typechain';
+
+@Injectable()
+export class OracleService implements OnModuleInit {
+  protected CONTRACT_ADDRESSES: { [key: number]: string };
+  private readonly connectionsMap: Map<number, ChainConnectionInfo> = new Map();
+  private readonly erc20MetadataCache: Map<
+    string,
+    { decimals: number; symbol: string; name: string }
+  > = new Map();
+  private readonly priceCache: Map<string, { price: number; timestamp: number }> = new Map();
+  private readonly PRICE_CACHE_TTL = 30000; // 30 seconds
+
+  constructor(
+    @Inject(CONNECTION_INFO)
+    private readonly chainConnectionInfos: ChainConnectionInfo[],
+  ) {}
+
+  onModuleInit() {
+    this.initialize();
+  }
+
+  private initialize() {
+    this.initializeContracts();
+    this.initializeConnectionsMap();
+  }
+
+  private initializeContracts() {
+    this.CONTRACT_ADDRESSES = {
+      [ChainIds.DUSK_TESTNET]: '0xb33B33B1c457a4E26e3Bb2391cE07a73B73b0d22',
+      [ChainIds.PHAROS_TESTNET]: '0xd03a9BE3d61C5d287dA7b23bd7641A6489d0FDd8',
+      [ChainIds.SEISMIC_TESTNET]: '0x6202Fc26DF15bb3010df625e8874E8B55C42b46f',
+    };
+  }
+
+  private initializeConnectionsMap() {
+    this.chainConnectionInfos.forEach((connectionInfo) => {
+      this.connectionsMap.set(connectionInfo.chainId, connectionInfo);
+    });
+  }
+
+  private getConnectionInfo(chainId: number) {
+    return this.connectionsMap.get(chainId) || ({} as ChainConnectionInfo);
+  }
+
+  private provider(rpcInfo: RPCInfo, chainId?: number) {
+    return new JsonRpcProvider(rpcInfo.url, chainId);
+  }
+
+  private async getERC20Metadata(address: string, chainId: number) {
+    const cacheKey = `${address.toLowerCase()}-${chainId}`;
+    const cachedMetadata = this.erc20MetadataCache.get(cacheKey);
+    if (cachedMetadata) return cachedMetadata;
+
+    const connectionInfo = this.getConnectionInfo(chainId);
+    const promises = connectionInfo.rpcInfos.map(async (rpcInfo) => {
+      const provider = this.provider(rpcInfo, chainId);
+
+      const erc20 = Erc20__factory.connect(address, provider);
+
+      return Promise.all([erc20.decimals(), erc20.symbol(), erc20.name()]);
+    });
+
+    const [decimals, symbol, name] = await Promise.any(promises);
+    const metadata = {
+      decimals: parseInt(decimals.toString()),
+      symbol,
+      name,
+    };
+
+    this.erc20MetadataCache.set(cacheKey, metadata);
+    return metadata;
+  }
+
+  async getPriceInUSD(token: string, chainId: number) {
+    const cacheKey = `usd-${token.toLowerCase()}-${chainId}`;
+    const cached = this.priceCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < this.PRICE_CACHE_TTL) {
+      return cached.price;
+    }
+
+    const erc20Metadata = await this.getERC20Metadata(token, chainId);
+    const ONE = parseUnits('1', erc20Metadata.decimals);
+    const connectionInfo = this.getConnectionInfo(chainId);
+    const promises = connectionInfo.rpcInfos.map(async (rpcInfo) => {
+      const provider = this.provider(rpcInfo, chainId);
+
+      const oracle = Oracle__factory.connect(this.CONTRACT_ADDRESSES[chainId], provider);
+      return oracle.getAverageValueInUSD(token, ONE);
+    });
+
+    const [price] = await Promise.any(promises);
+    const parsedPrice = parseFloat(formatUnits(price, 18));
+
+    this.priceCache.set(cacheKey, { price: parsedPrice, timestamp: Date.now() });
+    return parsedPrice;
+  }
+
+  async getPriceInETH(token: string, chainId: number) {
+    const cacheKey = `eth-${token.toLowerCase()}-${chainId}`;
+    const cached = this.priceCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < this.PRICE_CACHE_TTL) {
+      return cached.price;
+    }
+
+    const erc20Metadata = await this.getERC20Metadata(token, chainId);
+    const ONE = parseUnits('1', erc20Metadata.decimals);
+    const connectionInfo = this.getConnectionInfo(chainId);
+    const promises = connectionInfo.rpcInfos.map(async (rpcInfo) => {
+      const provider = this.provider(rpcInfo, chainId);
+
+      const oracle = Oracle__factory.connect(this.CONTRACT_ADDRESSES[chainId], provider);
+      return oracle.getAverageValueInETH(token, ONE);
+    });
+
+    const [price] = await Promise.any(promises);
+    const parsedPrice = parseFloat(formatUnits(price, 18));
+
+    this.priceCache.set(cacheKey, { price: parsedPrice, timestamp: Date.now() });
+    return parsedPrice;
+  }
+}
